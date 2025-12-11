@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { ArrowRight, Activity, Brain, Layers, GitMerge, ShieldCheck, BarChart3, ChevronRight, Zap } from 'lucide-react';
+import { ArrowRight, Activity, Brain, Layers, GitMerge, ShieldCheck, BarChart3, ChevronRight, Zap, Target, Search } from 'lucide-react';
 
 interface LandingPageProps {
   onSignIn: () => void;
@@ -35,7 +35,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn }) => {
 
         <div className="relative z-10 max-w-4xl mx-auto">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-600 text-xs font-bold uppercase tracking-wider mb-6">
-            <Zap size={12} fill="currentColor" /> v2.4 Enterprise Edition Live
+            <Zap size={12} fill="currentColor" /> v2.5 Enterprise Edition Live
           </div>
           <h1 className="text-5xl md:text-7xl font-bold text-slate-900 mb-8 leading-tight tracking-tight">
             Turn Complex Data into <br/>
@@ -76,12 +76,12 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn }) => {
         </div>
       </section>
 
-      {/* Value Proposition Grid */}
+      {/* Value Proposition Grid (The Insight Pipeline) */}
       <section className="py-24 max-w-7xl mx-auto px-6">
         <div className="text-center mb-16">
-          <h2 className="text-3xl font-bold text-slate-900 mb-4">The D.I.G. Framework</h2>
+          <h2 className="text-3xl font-bold text-slate-900 mb-4">The Insight Pipeline</h2>
           <p className="text-slate-500 max-w-xl mx-auto">
-            Our proprietary process ensures no insight is missed. We take you from Description to Introspection to Goal Setting automatically.
+            From raw numbers to executive strategy. Our adaptive pipeline guides you through the complete analytics lifecycle.
           </p>
         </div>
 
@@ -89,11 +89,11 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn }) => {
           {/* Feature 1 */}
           <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
             <div className="w-14 h-14 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mb-6">
-              <Activity size={28} />
+              <Search size={28} />
             </div>
-            <h3 className="text-xl font-bold text-slate-800 mb-3">1. Auto-Description</h3>
+            <h3 className="text-xl font-bold text-slate-800 mb-3">1. Intelligent Profiling</h3>
             <p className="text-slate-500 leading-relaxed">
-              Upload any CSV. Our AI instantly profiles column quality, detects outliers, and generates descriptive statistics without you writing a single line of code.
+              Upload any dataset. We instantly map your data structure, detecting anomalies, cleaning inputs, and establishing a statistical baseline automatically.
             </p>
           </div>
 
@@ -102,20 +102,20 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn }) => {
             <div className="w-14 h-14 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center mb-6">
               <Brain size={28} />
             </div>
-            <h3 className="text-xl font-bold text-slate-800 mb-3">2. Deep Introspection</h3>
+            <h3 className="text-xl font-bold text-slate-800 mb-3">2. Contextual Discovery</h3>
             <p className="text-slate-500 leading-relaxed">
-              Don't know what to ask your data? Vision Smart AI generates the critical business questions for you and provides hypothesis-driven answers immediately.
+              The AI acts as a senior analyst, identifying hidden patterns and generating the critical business questions you didn't know you needed to ask.
             </p>
           </div>
 
           {/* Feature 3 */}
           <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
             <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center mb-6">
-              <BarChart3 size={28} />
+              <Target size={28} />
             </div>
-            <h3 className="text-xl font-bold text-slate-800 mb-3">3. Vision Boarding</h3>
+            <h3 className="text-xl font-bold text-slate-800 mb-3">3. Strategic Execution</h3>
             <p className="text-slate-500 leading-relaxed">
-              Set a goal like "Increase Revenue" and watch as the system builds a custom dashboard with specific charts, KPIs, and a roadmap to achieve it.
+              Define your objectives. We generate a tailored roadmap, live KPI dashboards, and a final professional report ready for stakeholders.
             </p>
           </div>
         </div>
@@ -128,13 +128,13 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn }) => {
         <div className="max-w-7xl mx-auto px-6 relative z-10 flex flex-col md:flex-row items-center gap-16">
            <div className="flex-1">
               <div className="inline-block px-3 py-1 rounded-lg bg-indigo-500/20 text-indigo-300 text-xs font-bold uppercase tracking-wider mb-6">
-                Advanced Analytics Studio
+                Advanced Studio
               </div>
               <h2 className="text-3xl md:text-5xl font-bold mb-6 leading-tight">
                 Go Beyond Simple Charts with Multi-File Intelligence
               </h2>
               <p className="text-slate-400 text-lg mb-8 leading-relaxed">
-                Need to correlate marketing spend with sales revenue across different files? Our Multi-File Analysis engine handles complex joins, regressions, and K-Means clustering automatically.
+                Need to correlate marketing spend with sales revenue across different files? Our Advanced Studio handles complex joins, regressions, and K-Means clustering automatically.
               </p>
               
               <ul className="space-y-4 mb-8">
@@ -153,7 +153,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn }) => {
                 onClick={onSignIn}
                 className="px-8 py-3 bg-white text-slate-900 rounded-lg font-bold hover:bg-slate-100 transition-colors"
               >
-                Try Advanced Studio
+                Launch Advanced Studio
               </button>
            </div>
            

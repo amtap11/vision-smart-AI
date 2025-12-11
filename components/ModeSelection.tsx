@@ -1,5 +1,6 @@
+
 import React from 'react';
-import { FileText, GitMerge, ArrowRight, Layers, Activity } from 'lucide-react';
+import { FileText, GitMerge, ArrowRight, Layers, Activity, Sparkles, Workflow } from 'lucide-react';
 
 interface ModeSelectionProps {
   onSelectSingle: () => void;
@@ -10,14 +11,14 @@ const ModeSelection: React.FC<ModeSelectionProps> = ({ onSelectSingle, onSelectM
   return (
     <div className="max-w-4xl mx-auto py-12 px-4 animate-in fade-in slide-in-from-bottom-8">
       <div className="text-center mb-12">
-        <h2 className="text-3xl font-bold text-slate-800 mb-4">Select Analysis Mode</h2>
+        <h2 className="text-3xl font-bold text-slate-800 mb-4">Select Analysis Studio</h2>
         <p className="text-slate-500 max-w-lg mx-auto">
-          Choose how you want to analyze your data. You can switch modes later from the dashboard.
+          Choose the environment that best fits your data complexity. You can switch studios later from the dashboard.
         </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* Single File Card */}
+        {/* Simple Studio Card */}
         <button 
           onClick={onSelectSingle}
           className="group relative bg-white p-8 rounded-2xl border-2 border-slate-200 hover:border-blue-500 hover:shadow-xl transition-all duration-300 text-left"
@@ -27,24 +28,22 @@ const ModeSelection: React.FC<ModeSelectionProps> = ({ onSelectSingle, onSelectM
           </div>
           
           <div className="w-14 h-14 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-            <FileText size={28} />
+            <Sparkles size={28} />
           </div>
           
-          <h3 className="text-xl font-bold text-slate-800 mb-3">Single File Intelligence</h3>
+          <h3 className="text-xl font-bold text-slate-800 mb-3">Simple Studio</h3>
           <p className="text-slate-500 text-sm leading-relaxed mb-6">
-            Complete DIG Framework analysis (Description, Introspection, Goal Setting) for a single dataset.
-            Ideal for monthly reporting, deep dives, and specific operational goals.
+            A guided, linear workflow for analyzing a single dataset. Perfect for generating quick insights, setting goals, and creating professional reports.
           </p>
           
           <div className="flex flex-wrap gap-2">
-            <span className="px-2 py-1 bg-slate-50 text-slate-500 text-xs rounded border border-slate-100">Quality Check</span>
-            <span className="px-2 py-1 bg-slate-50 text-slate-500 text-xs rounded border border-slate-100">AI Goals</span>
-            <span className="px-2 py-1 bg-slate-50 text-slate-500 text-xs rounded border border-slate-100">Dashboard</span>
-            <span className="px-2 py-1 bg-slate-50 text-slate-500 text-xs rounded border border-slate-100">PDF Report</span>
+            <span className="px-2 py-1 bg-slate-50 text-slate-500 text-xs rounded border border-slate-100">Automated Profiling</span>
+            <span className="px-2 py-1 bg-slate-50 text-slate-500 text-xs rounded border border-slate-100">Smart Goals</span>
+            <span className="px-2 py-1 bg-slate-50 text-slate-500 text-xs rounded border border-slate-100">Instant Dashboard</span>
           </div>
         </button>
 
-        {/* Multi File Card */}
+        {/* Advanced Studio Card */}
         <button 
           onClick={onSelectMulti}
           className="group relative bg-white p-8 rounded-2xl border-2 border-slate-200 hover:border-indigo-500 hover:shadow-xl transition-all duration-300 text-left"
@@ -54,27 +53,25 @@ const ModeSelection: React.FC<ModeSelectionProps> = ({ onSelectSingle, onSelectM
           </div>
 
           <div className="w-14 h-14 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-            <GitMerge size={28} />
+            <Workflow size={28} />
           </div>
           
-          <h3 className="text-xl font-bold text-slate-800 mb-3">Multi-File Analysis</h3>
+          <h3 className="text-xl font-bold text-slate-800 mb-3">Advanced Studio</h3>
           <p className="text-slate-500 text-sm leading-relaxed mb-6">
-            Advanced statistical workbench for comparing multiple datasets. Find correlations, 
-            run regressions, and detect cross-file patterns using AI.
+            A flexible statistical workbench for multiple datasets. Perform complex joins, predictive modeling, and cross-file pattern detection.
           </p>
           
           <div className="flex flex-wrap gap-2">
-            <span className="px-2 py-1 bg-slate-50 text-slate-500 text-xs rounded border border-slate-100">Correlation</span>
-            <span className="px-2 py-1 bg-slate-50 text-slate-500 text-xs rounded border border-slate-100">Linear Regression</span>
-            <span className="px-2 py-1 bg-slate-50 text-slate-500 text-xs rounded border border-slate-100">Pattern Scout</span>
-            <span className="px-2 py-1 bg-slate-50 text-slate-500 text-xs rounded border border-slate-100">Data Merging</span>
+            <span className="px-2 py-1 bg-slate-50 text-slate-500 text-xs rounded border border-slate-100">Data Joining</span>
+            <span className="px-2 py-1 bg-slate-50 text-slate-500 text-xs rounded border border-slate-100">Regression & Clustering</span>
+            <span className="px-2 py-1 bg-slate-50 text-slate-500 text-xs rounded border border-slate-100">Forecasting</span>
           </div>
         </button>
       </div>
 
       <div className="mt-12 text-center">
          <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-full text-slate-500 text-xs font-medium">
-             <Activity size={14} /> System Ready • Version 2.4.0
+             <Activity size={14} /> System Ready • Version 2.5.0
          </div>
       </div>
     </div>

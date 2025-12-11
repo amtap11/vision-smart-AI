@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Upload, FileText, Plus, X, GitMerge, TrendingUp, Sparkles, Loader2, Calculator, ArrowRight, Wand2, ArrowDownUp, Split, Combine, CheckCircle2, Layers, PlayCircle, Lightbulb, Sigma, ScanSearch, LineChart as LineChartIcon, BoxSelect, Info, HelpCircle, Grid, Grid3X3, Clock, Share2, ScatterChart as ScatterIcon, Settings2, MessageSquare, Bot, Send, Download } from 'lucide-react';
-import { parseCSV, generateDatasetSummary, calculatePearsonCorrelation, joinDatasets, unionDatasets, applyTransformation, trainRegressionModel, prepareMultiSourceData, calculateCorrelationMatrix, computeKMeans, computeForecast, exportToCSV } from '../services/dataService';
+import { Upload, FileText, Plus, X, GitMerge, TrendingUp, Sparkles, Loader2, Calculator, ArrowRight, Wand2, ArrowDownUp, Split, Combine, CheckCircle2, Layers, PlayCircle, Lightbulb, Sigma, ScanSearch, LineChart as LineChartIcon, BoxSelect, Info, HelpCircle, Grid, Grid3X3, Clock, Share2, ScatterChart as ScatterIcon, Settings2, MessageSquare, Bot, Send, Download, Scissors, Table2, Trash2, Filter } from 'lucide-react';
+import { parseCSV, generateDatasetSummary, calculatePearsonCorrelation, joinDatasets, unionDatasets, applyTransformation, trainRegressionModel, prepareMultiSourceData, calculateCorrelationMatrix, computeKMeans, computeForecast, exportToCSV, dropColumn, removeRowsWithMissing, createSample, filterDataset } from '../services/dataService';
 import { analyzeCrossFilePatterns, suggestTransformations, suggestMergeStrategy, suggestStatisticalAnalyses, getModelAdvisorResponse, suggestClusteringSetup, suggestForecastingSetup, explainStatistic } from '../services/geminiService';
 import { Dataset, PatientRecord, TransformationSuggestion, StatisticalSuggestion, RegressionModel, CorrelationMatrix, ClusterResult, ForecastResult, ChatMessage, ReportItem } from '../types';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line, ReferenceLine, LineChart, Cell, Legend } from 'recharts';
@@ -101,23 +101,43 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ onAnalyzeDataset,
   const [forecastValueCol, setForecastValueCol] = useState('');
   const [forecastResult, setForecastResult] = useState<ForecastResult | null>(null);
 
-  // Data Studio State
-  const [selectedDsId, setSelectedDsId] = useState<string>('');
+  // --- DATA STUDIO STATES ---
+  const [shapingDsId, setShapingDsId] = useState('');
+  
+  // Sampling
+  const [sampleSize, setSampleSize] = useState(100);
+  
+  // Drop/Filter
+  const [dropColName, setDropColName] = useState('');
+  const [filterColName, setFilterColName] = useState('');
+  const [filterMode, setFilterMode] = useState<'equals' | 'not_equals' | 'contains' | 'is_empty'>('equals');
+  const [filterValue, setFilterValue] = useState('');
+
+  // Transform AI
+  const [transformDsId, setTransformDsId] = useState('');
   const [suggestions, setSuggestions] = useState<TransformationSuggestion[]>([]);
   const [isSuggesting, setIsSuggesting] = useState(false);
+
+  // Merge/Integration
+  const [integrationMode, setIntegrationMode] = useState<'merge' | 'lookup'>('merge');
   
-  // Merge State
+  // Merge
   const [mergeStrategy, setMergeStrategy] = useState<'join' | 'union'>('join');
   const [mergeDsA, setMergeDsA] = useState(''); 
   const [mergeDsB, setMergeDsB] = useState(''); 
   const [selectedUnionIds, setSelectedUnionIds] = useState<Set<string>>(new Set()); 
-  
   const [isMergingAI, setIsMergingAI] = useState(false);
   const [mergeKeys, setMergeKeys] = useState({ keyA: '', keyB: '' });
   const [mergeReason, setMergeReason] = useState('');
   const [newColName, setNewColName] = useState('');
   const [unionMappings, setUnionMappings] = useState<Record<string, string>>({});
   const [mergedDatasetName, setMergedDatasetName] = useState('');
+
+  // Lookup (Enrichment)
+  const [enrichTargetId, setEnrichTargetId] = useState('');
+  const [enrichSourceId, setEnrichSourceId] = useState('');
+  const [enrichJoinKey, setEnrichJoinKey] = useState('');
+  const [enrichSelectedCols, setEnrichSelectedCols] = useState<Set<string>>(new Set());
 
   // Scroll chat to bottom
   useEffect(() => {
@@ -375,9 +395,51 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ onAnalyzeDataset,
       setIsSuggesting(false);
   };
 
-  // --- TRANSFORM & MERGE HANDLERS ---
+  // --- STUDIO: SHAPING & SAMPLING HANDLERS ---
+  const handleDropColumn = () => {
+      if(!shapingDsId || !dropColName) return;
+      setDatasets(prev => prev.map(ds => {
+          if (ds.id === shapingDsId) {
+              const newData = dropColumn(ds.data, dropColName);
+              return { ...ds, data: newData };
+          }
+          return ds;
+      }));
+      setDropColName('');
+  };
+
+  const handleFilterRows = () => {
+      if(!shapingDsId || !filterColName) return;
+      setDatasets(prev => prev.map(ds => {
+          if (ds.id === shapingDsId) {
+              const newData = filterDataset(ds.data, filterColName, filterValue, filterMode);
+              return { ...ds, data: newData };
+          }
+          return ds;
+      }));
+      setFilterColName('');
+      setFilterValue('');
+  };
+
+  const handleCreateSample = () => {
+      if(!shapingDsId || sampleSize <= 0) return;
+      const ds = datasets.find(d => d.id === shapingDsId);
+      if(!ds) return;
+      
+      const sampleData = createSample(ds.data, sampleSize, 'random');
+      const newDs: Dataset = {
+          id: Math.random().toString(36).substr(2, 9),
+          name: `${ds.name}_sample_${sampleSize}`,
+          data: sampleData,
+          color: COLORS[datasets.length % COLORS.length]
+      };
+      setDatasets(prev => [...prev, newDs]);
+      alert(`Created sample dataset with ${sampleData.length} rows.`);
+  };
+
+  // --- STUDIO: TRANSFORM HANDLERS ---
   const handleGetTransformSuggestions = async () => {
-      const ds = datasets.find(d => d.id === selectedDsId);
+      const ds = datasets.find(d => d.id === transformDsId);
       if (!ds) return;
       setIsSuggesting(true);
       const summary = generateDatasetSummary(ds.data).substring(0, 1000);
@@ -389,7 +451,7 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ onAnalyzeDataset,
 
   const handleApplyTransformation = (s: TransformationSuggestion) => {
       setDatasets(prev => prev.map(ds => {
-          if (ds.id === selectedDsId) {
+          if (ds.id === transformDsId) {
               const newData = applyTransformation(ds.data, s);
               return { ...ds, data: newData };
           }
@@ -398,6 +460,7 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ onAnalyzeDataset,
       setSuggestions(prev => prev.filter(p => p.id !== s.id)); 
   };
 
+  // --- STUDIO: MERGE & LOOKUP HANDLERS ---
   const toggleUnionSelection = (id: string) => {
       const next = new Set(selectedUnionIds);
       if (next.has(id)) next.delete(id); else next.add(id);
@@ -482,6 +545,52 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ onAnalyzeDataset,
         setMergedDatasetName(''); 
         alert(`Successfully stacked ${targetDatasets.length} files (${matchedCount} rows).`);
       }
+  };
+
+  const handleExecuteLookup = () => {
+    const dsTarget = datasets.find(d => d.id === enrichTargetId);
+    const dsSource = datasets.find(d => d.id === enrichSourceId);
+    if (!dsTarget || !dsSource || !enrichJoinKey || enrichSelectedCols.size === 0) return;
+
+    // Build Lookup Map
+    const sourceMap = new Map<string, any>();
+    dsSource.data.forEach(row => {
+        const key = String(row[enrichJoinKey]).trim();
+        if (key) sourceMap.set(key, row);
+    });
+
+    let matchCount = 0;
+    const enrichedData = dsTarget.data.map(row => {
+        const key = String(row[enrichJoinKey]).trim();
+        const sourceRow = sourceMap.get(key);
+        const newRow = { ...row };
+        if (sourceRow) {
+            matchCount++;
+            enrichSelectedCols.forEach(col => {
+                newRow[col] = sourceRow[col];
+            });
+        } else {
+             enrichSelectedCols.forEach(col => {
+                newRow[col] = null; // or undefined
+            });
+        }
+        return newRow;
+    });
+
+    const newDs: Dataset = {
+        id: Math.random().toString(36).substr(2, 9),
+        name: `${dsTarget.name}_enriched`,
+        data: enrichedData,
+        color: COLORS[datasets.length % COLORS.length]
+    };
+    setDatasets(prev => [...prev, newDs]);
+    alert(`Enriched ${dsTarget.name} with ${enrichSelectedCols.size} columns. Matched ${matchCount} rows.`);
+  };
+
+  const toggleEnrichCol = (col: string) => {
+    const next = new Set(enrichSelectedCols);
+    if (next.has(col)) next.delete(col); else next.add(col);
+    setEnrichSelectedCols(next);
   };
 
   const getCleanFeatureName = (key: string) => {
@@ -1029,21 +1138,132 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ onAnalyzeDataset,
 
         {/* --- VIEW: DATA STUDIO --- */}
         {activeTab === 'studio' && datasets.length > 0 && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
                 
-                {/* Panel 1: Transform */}
+                {/* Panel 1: Structure & Cleaning */}
+                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm h-fit">
+                    <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
+                        <Scissors className="text-pink-500" />
+                        <h3 className="font-bold text-slate-800">Shaping & Cleaning</h3>
+                    </div>
+
+                    <label className="text-xs font-bold text-slate-500 uppercase block mb-2">Target Dataset</label>
+                    <select 
+                        value={shapingDsId}
+                        onChange={(e) => setShapingDsId(e.target.value)}
+                        className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-slate-50 mb-4"
+                    >
+                        <option value="">Select Dataset...</option>
+                        {datasets.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    </select>
+
+                    <div className="space-y-6">
+                        {/* Drop Column */}
+                        <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                            <h4 className="text-sm font-semibold text-slate-700 mb-2">Drop Column</h4>
+                            <div className="flex gap-2">
+                                <select 
+                                    value={dropColName}
+                                    onChange={(e) => setDropColName(e.target.value)}
+                                    className="flex-1 p-2 border border-slate-200 rounded text-xs"
+                                    disabled={!shapingDsId}
+                                >
+                                    <option value="">Select Column...</option>
+                                    {shapingDsId && Object.keys(datasets.find(d => d.id === shapingDsId)?.data[0] || {}).map(c => (
+                                        <option key={c} value={c}>{c}</option>
+                                    ))}
+                                </select>
+                                <button 
+                                    onClick={handleDropColumn}
+                                    disabled={!shapingDsId || !dropColName}
+                                    className="px-3 bg-red-100 text-red-600 rounded hover:bg-red-200 transition-colors"
+                                >
+                                    <Trash2 size={16} />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Filter Rows */}
+                        <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                            <h4 className="text-sm font-semibold text-slate-700 mb-2">Filter Rows</h4>
+                            <div className="space-y-2">
+                                <select 
+                                    value={filterColName}
+                                    onChange={(e) => setFilterColName(e.target.value)}
+                                    className="w-full p-2 border border-slate-200 rounded text-xs"
+                                    disabled={!shapingDsId}
+                                >
+                                    <option value="">Select Column...</option>
+                                    {shapingDsId && Object.keys(datasets.find(d => d.id === shapingDsId)?.data[0] || {}).map(c => (
+                                        <option key={c} value={c}>{c}</option>
+                                    ))}
+                                </select>
+                                <div className="flex gap-2">
+                                    <select 
+                                        value={filterMode}
+                                        onChange={(e) => setFilterMode(e.target.value as any)}
+                                        className="w-1/3 p-2 border border-slate-200 rounded text-xs"
+                                    >
+                                        <option value="equals">Equals</option>
+                                        <option value="not_equals">Not Equals</option>
+                                        <option value="contains">Contains</option>
+                                        <option value="is_empty">Is Empty</option>
+                                    </select>
+                                    <input 
+                                        placeholder="Value..." 
+                                        value={filterValue}
+                                        onChange={(e) => setFilterValue(e.target.value)}
+                                        className="flex-1 p-2 border border-slate-200 rounded text-xs"
+                                        disabled={filterMode === 'is_empty'}
+                                    />
+                                </div>
+                                <button 
+                                    onClick={handleFilterRows}
+                                    disabled={!shapingDsId || !filterColName}
+                                    className="w-full py-2 bg-white border border-slate-200 text-slate-600 rounded text-xs font-semibold hover:bg-slate-100"
+                                >
+                                    Apply Filter
+                                </button>
+                            </div>
+                        </div>
+
+                         {/* Sampling */}
+                         <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                            <h4 className="text-sm font-semibold text-slate-700 mb-2">Create Sample</h4>
+                            <div className="flex gap-2 items-center">
+                                <input 
+                                    type="number"
+                                    min="10"
+                                    value={sampleSize}
+                                    onChange={(e) => setSampleSize(Number(e.target.value))}
+                                    className="w-20 p-2 border border-slate-200 rounded text-xs"
+                                />
+                                <span className="text-xs text-slate-400">rows</span>
+                                <button 
+                                    onClick={handleCreateSample}
+                                    disabled={!shapingDsId}
+                                    className="flex-1 py-2 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded text-xs font-semibold hover:bg-indigo-100"
+                                >
+                                    Generate Sample
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Panel 2: Transformation */}
                 <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm h-fit">
                     <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
                         <ArrowDownUp className="text-purple-500" />
-                        <h3 className="font-bold text-slate-800">AI Coding & Decoding</h3>
+                        <h3 className="font-bold text-slate-800">AI Transforms</h3>
                     </div>
                     
                     <div className="space-y-4">
-                        <label className="text-sm font-medium text-slate-700">Select Dataset to Transform</label>
+                        <label className="text-xs font-bold text-slate-500 uppercase">Target Dataset</label>
                         <select 
-                            value={selectedDsId}
-                            onChange={(e) => setSelectedDsId(e.target.value)}
-                            className="w-full p-3 border border-slate-300 rounded-lg text-sm bg-slate-50"
+                            value={transformDsId}
+                            onChange={(e) => setTransformDsId(e.target.value)}
+                            className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-slate-50"
                         >
                             <option value="">Select Dataset...</option>
                             {datasets.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
@@ -1051,188 +1271,237 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ onAnalyzeDataset,
 
                         <button 
                             onClick={handleGetTransformSuggestions}
-                            disabled={!selectedDsId || isSuggesting}
-                            className="w-full py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+                            disabled={!transformDsId || isSuggesting}
+                            className="w-full py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50 text-sm"
                         >
-                            {isSuggesting ? <Loader2 className="animate-spin" /> : <Wand2 size={18} />}
+                            {isSuggesting ? <Loader2 className="animate-spin" size={16}/> : <Wand2 size={16} />}
                             Ask AI for Suggestions
                         </button>
 
-                        <div className="space-y-3 mt-4">
+                        <div className="space-y-3 mt-4 h-96 overflow-y-auto pr-1 custom-scrollbar">
                             {suggestions.map((s) => (
-                                <div key={s.id} className="p-4 border border-purple-100 bg-purple-50 rounded-lg flex justify-between items-start gap-3">
+                                <div key={s.id} className="p-3 border border-purple-100 bg-purple-50 rounded-lg flex justify-between items-start gap-3">
                                     <div>
                                         <h4 className="text-sm font-bold text-purple-800">{s.title}</h4>
                                         <p className="text-xs text-purple-600">{s.description}</p>
-                                        <div className="mt-2 text-xs text-slate-500 font-mono bg-white px-2 py-1 rounded inline-block">
+                                        <div className="mt-2 text-[10px] text-slate-500 font-mono bg-white px-2 py-0.5 rounded inline-block">
                                             {s.action} on '{s.targetColumn}'
                                         </div>
                                     </div>
                                     <button 
                                         onClick={() => handleApplyTransformation(s)}
-                                        className="text-purple-600 hover:text-purple-800 bg-white p-2 rounded-lg border border-purple-200"
+                                        className="text-purple-600 hover:text-purple-800 bg-white p-1.5 rounded-lg border border-purple-200"
                                         title="Apply"
                                     >
-                                        <CheckCircle2 size={18} />
+                                        <CheckCircle2 size={16} />
                                     </button>
                                 </div>
                             ))}
-                            {suggestions.length === 0 && selectedDsId && !isSuggesting && (
+                            {suggestions.length === 0 && transformDsId && !isSuggesting && (
                                 <div className="text-center text-xs text-slate-400 py-4">No suggestions generated yet.</div>
                             )}
                         </div>
                     </div>
                 </div>
 
-                {/* Panel 2: Merge */}
+                {/* Panel 3: Integration (Merge & Enrich) */}
                 <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm h-fit">
                     <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-3">
                         <Combine className="text-blue-500" />
-                        <h3 className="font-bold text-slate-800">Merge Datasets</h3>
+                        <h3 className="font-bold text-slate-800">Integration</h3>
                     </div>
 
+                    {/* Mode Toggle */}
                     <div className="flex bg-slate-100 rounded-lg p-1 mb-4">
                         <button 
-                           onClick={() => setMergeStrategy('join')}
-                           className={`flex-1 py-1 text-sm font-medium rounded transition-all ${mergeStrategy === 'join' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+                           onClick={() => setIntegrationMode('merge')}
+                           className={`flex-1 py-1 text-sm font-medium rounded transition-all ${integrationMode === 'merge' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
                         >
-                            Join (Side-by-Side)
+                            Merge Files
                         </button>
                         <button 
-                           onClick={() => setMergeStrategy('union')}
-                           className={`flex-1 py-1 text-sm font-medium rounded transition-all ${mergeStrategy === 'union' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+                           onClick={() => setIntegrationMode('lookup')}
+                           className={`flex-1 py-1 text-sm font-medium rounded transition-all ${integrationMode === 'lookup' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
                         >
-                            Stack (Top-to-Bottom)
+                            Lookup Columns
                         </button>
                     </div>
 
-                    <button 
-                        onClick={handleSuggestMerge}
-                        disabled={isMergingAI}
-                        className="w-full py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-100 font-medium flex items-center justify-center gap-2 disabled:opacity-50 mb-4"
-                    >
-                        {isMergingAI ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />}
-                        AI: Analyze Strategy
-                    </button>
-                    
-                    {mergeReason && (
-                        <div className="p-3 bg-blue-50 text-blue-800 text-xs rounded border border-blue-100 mb-4">
-                            <strong>AI Strategy:</strong> {mergeReason}
-                        </div>
-                    )}
+                    {integrationMode === 'merge' ? (
+                        <>
+                             <div className="flex gap-2 mb-4">
+                                <button 
+                                   onClick={() => setMergeStrategy('join')}
+                                   className={`flex-1 py-1 text-xs border rounded transition-all ${mergeStrategy === 'join' ? 'bg-blue-50 border-blue-200 text-blue-700 font-bold' : 'border-slate-200 text-slate-500'}`}
+                                >
+                                    Join (Side-by-Side)
+                                </button>
+                                <button 
+                                   onClick={() => setMergeStrategy('union')}
+                                   className={`flex-1 py-1 text-xs border rounded transition-all ${mergeStrategy === 'union' ? 'bg-blue-50 border-blue-200 text-blue-700 font-bold' : 'border-slate-200 text-slate-500'}`}
+                                >
+                                    Stack (Vertical)
+                                </button>
+                            </div>
 
-                    <div className="space-y-4">
-                        {mergeStrategy === 'join' ? (
-                            <>
-                                <div className="grid grid-cols-2 gap-4">
-                                     <div>
-                                        <label className="text-xs font-bold text-slate-500 uppercase">Dataset A (Left)</label>
-                                        <select 
-                                            value={mergeDsA}
-                                            onChange={(e) => setMergeDsA(e.target.value)}
-                                            className="w-full p-2 border border-slate-300 rounded-lg text-sm mt-1"
-                                        >
-                                            <option value="">Select...</option>
-                                            {datasets.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                                        </select>
-                                     </div>
-                                     <div>
-                                        <label className="text-xs font-bold text-slate-500 uppercase">Dataset B (Right)</label>
-                                        <select 
-                                            value={mergeDsB}
-                                            onChange={(e) => setMergeDsB(e.target.value)}
-                                            className="w-full p-2 border border-slate-300 rounded-lg text-sm mt-1"
-                                        >
-                                            <option value="">Select...</option>
-                                            {datasets.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                                        </select>
-                                     </div>
+                            <button 
+                                onClick={handleSuggestMerge}
+                                disabled={isMergingAI}
+                                className="w-full py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-100 font-medium flex items-center justify-center gap-2 disabled:opacity-50 mb-4 text-xs"
+                            >
+                                {isMergingAI ? <Loader2 className="animate-spin" size={14} /> : <Sparkles size={14} />}
+                                AI Strategy
+                            </button>
+                            
+                            {mergeReason && (
+                                <div className="p-2 bg-blue-50 text-blue-800 text-[10px] rounded border border-blue-100 mb-4">
+                                    <strong>AI:</strong> {mergeReason}
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <input 
-                                        placeholder="Key Column from A"
-                                        value={mergeKeys.keyA}
-                                        onChange={(e) => setMergeKeys({...mergeKeys, keyA: e.target.value})}
-                                        className="w-full p-2 border border-slate-300 rounded-lg text-sm"
-                                    />
-                                    <input 
-                                        placeholder="Key Column from B"
-                                        value={mergeKeys.keyB}
-                                        onChange={(e) => setMergeKeys({...mergeKeys, keyB: e.target.value})}
-                                        className="w-full p-2 border border-slate-300 rounded-lg text-sm"
-                                    />
-                                </div>
-                            </>
-                        ) : (
-                            <>
+                            )}
+
+                            <div className="space-y-4">
+                                {mergeStrategy === 'join' ? (
+                                    <>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div>
+                                                <label className="text-[10px] font-bold text-slate-500 uppercase">Left Dataset</label>
+                                                <select 
+                                                    value={mergeDsA}
+                                                    onChange={(e) => setMergeDsA(e.target.value)}
+                                                    className="w-full p-2 border border-slate-300 rounded-lg text-xs mt-1"
+                                                >
+                                                    <option value="">Select...</option>
+                                                    {datasets.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] font-bold text-slate-500 uppercase">Right Dataset</label>
+                                                <select 
+                                                    value={mergeDsB}
+                                                    onChange={(e) => setMergeDsB(e.target.value)}
+                                                    className="w-full p-2 border border-slate-300 rounded-lg text-xs mt-1"
+                                                >
+                                                    <option value="">Select...</option>
+                                                    {datasets.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <input 
+                                                placeholder="Key Col A"
+                                                value={mergeKeys.keyA}
+                                                onChange={(e) => setMergeKeys({...mergeKeys, keyA: e.target.value})}
+                                                className="w-full p-2 border border-slate-300 rounded-lg text-xs"
+                                            />
+                                            <input 
+                                                placeholder="Key Col B"
+                                                value={mergeKeys.keyB}
+                                                onChange={(e) => setMergeKeys({...mergeKeys, keyB: e.target.value})}
+                                                className="w-full p-2 border border-slate-300 rounded-lg text-xs"
+                                            />
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="space-y-2">
+                                        <div className="max-h-24 overflow-y-auto border border-slate-200 rounded-lg p-2 bg-slate-50">
+                                            {datasets.map(ds => (
+                                                <div key={ds.id} className="flex items-center gap-2 mb-1">
+                                                    <input 
+                                                        type="checkbox"
+                                                        checked={selectedUnionIds.has(ds.id)}
+                                                        onChange={() => toggleUnionSelection(ds.id)}
+                                                        className="rounded text-blue-600 focus:ring-blue-500"
+                                                    />
+                                                    <span className="text-xs truncate">{ds.name}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <input 
+                                            placeholder="New Source Column Name"
+                                            value={newColName}
+                                            onChange={(e) => setNewColName(e.target.value)}
+                                            className="w-full p-2 border border-slate-300 rounded-lg text-xs"
+                                        />
+                                    </div>
+                                )}
+                                
+                                <input 
+                                    placeholder="Resulting Dataset Name"
+                                    value={mergedDatasetName}
+                                    onChange={(e) => setMergedDatasetName(e.target.value)}
+                                    className="w-full p-2 border border-slate-300 rounded-lg text-xs"
+                                />
+
+                                <button 
+                                    onClick={handleExecuteMerge}
+                                    className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold text-xs"
+                                >
+                                    Execute {mergeStrategy === 'join' ? 'Join' : 'Stack'}
+                                </button>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="space-y-4 animate-in fade-in">
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">Target Dataset (To Enrich)</label>
+                                <select 
+                                    value={enrichTargetId}
+                                    onChange={(e) => setEnrichTargetId(e.target.value)}
+                                    className="w-full p-2 border border-slate-300 rounded-lg text-xs mt-1"
+                                >
+                                    <option value="">Select...</option>
+                                    {datasets.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                </select>
+                            </div>
+                            
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">Source Dataset (From)</label>
+                                <select 
+                                    value={enrichSourceId}
+                                    onChange={(e) => setEnrichSourceId(e.target.value)}
+                                    className="w-full p-2 border border-slate-300 rounded-lg text-xs mt-1"
+                                >
+                                    <option value="">Select...</option>
+                                    {datasets.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">Common ID / Join Key</label>
+                                <input 
+                                    placeholder="e.g. PatientID, SKU"
+                                    value={enrichJoinKey}
+                                    onChange={(e) => setEnrichJoinKey(e.target.value)}
+                                    className="w-full p-2 border border-slate-300 rounded-lg text-xs mt-1"
+                                />
+                            </div>
+
+                            {enrichSourceId && (
                                 <div className="max-h-32 overflow-y-auto border border-slate-200 rounded-lg p-2 bg-slate-50">
-                                    <div className="text-xs text-slate-500 font-bold mb-2">Select Files to Stack:</div>
-                                    {datasets.map(ds => (
-                                        <div key={ds.id} className="flex items-center gap-2 mb-1">
+                                    <div className="text-[10px] text-slate-500 font-bold mb-1">Select Columns to Add:</div>
+                                    {Object.keys(datasets.find(d => d.id === enrichSourceId)?.data[0] || {}).map(col => (
+                                        <div key={col} className="flex items-center gap-2 mb-1">
                                             <input 
                                                 type="checkbox"
-                                                checked={selectedUnionIds.has(ds.id)}
-                                                onChange={() => toggleUnionSelection(ds.id)}
-                                                className="rounded text-blue-600 focus:ring-blue-500"
+                                                checked={enrichSelectedCols.has(col)}
+                                                onChange={() => toggleEnrichCol(col)}
+                                                className="rounded text-blue-600"
                                             />
-                                            <span className="text-sm truncate">{ds.name}</span>
+                                            <span className="text-xs truncate">{col}</span>
                                         </div>
                                     ))}
                                 </div>
-                                
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase">New Source Column Name</label>
-                                    <input 
-                                        placeholder="e.g. Month, Branch, Source"
-                                        value={newColName}
-                                        onChange={(e) => setNewColName(e.target.value)}
-                                        className="w-full p-2 border border-slate-300 rounded-lg text-sm mt-1"
-                                    />
-                                </div>
+                            )}
 
-                                {selectedUnionIds.size > 0 && (
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold text-slate-500 uppercase">Values for New Column</label>
-                                        {datasets.filter(d => selectedUnionIds.has(d.id)).map(ds => (
-                                            <div key={ds.id} className="flex items-center gap-2">
-                                                <span className="text-xs text-slate-400 w-24 truncate" title={ds.name}>{ds.name}</span>
-                                                <ArrowRight size={12} className="text-slate-300" />
-                                                <input 
-                                                    value={unionMappings[ds.id] || ''}
-                                                    onChange={(e) => setUnionMappings(prev => ({...prev, [ds.id]: e.target.value}))}
-                                                    placeholder="Value (e.g. Jan)"
-                                                    className="flex-1 p-1.5 border border-slate-300 rounded text-sm"
-                                                />
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </>
-                        )}
-                        
-                        <div className="mt-4 pt-4 border-t border-slate-100">
-                             <label className="text-xs font-bold text-slate-500 uppercase">Resulting Dataset Name</label>
-                             <input 
-                                 placeholder={mergeStrategy === 'join' ? "Joined Dataset" : "Stacked Dataset"}
-                                 value={mergedDatasetName}
-                                 onChange={(e) => setMergedDatasetName(e.target.value)}
-                                 className="w-full p-2 border border-slate-300 rounded-lg text-sm mt-1"
-                             />
+                            <button 
+                                onClick={handleExecuteLookup}
+                                disabled={!enrichTargetId || !enrichSourceId || !enrichJoinKey || enrichSelectedCols.size === 0}
+                                className="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-bold text-xs disabled:opacity-50"
+                            >
+                                Add Columns
+                            </button>
                         </div>
-
-                        <button 
-                            onClick={handleExecuteMerge}
-                            disabled={
-                                mergeStrategy === 'join' 
-                                ? (!mergeKeys.keyA || !mergeKeys.keyB) 
-                                : (selectedUnionIds.size < 2)
-                            }
-                            className="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50 mt-4"
-                        >
-                            {mergeStrategy === 'join' ? <Combine size={18} /> : <Layers size={18} />}
-                            {mergeStrategy === 'join' ? 'Execute Join' : 'Stack Files'}
-                        </button>
-                    </div>
+                    )}
                 </div>
 
             </div>

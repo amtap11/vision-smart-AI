@@ -99,6 +99,34 @@ export const dropColumn = (data: PatientRecord[], column: string): PatientRecord
     });
 };
 
+export const createSample = (data: PatientRecord[], size: number, type: 'random' | 'first'): PatientRecord[] => {
+  if (size >= data.length) return [...data];
+  if (type === 'first') return data.slice(0, size);
+  
+  // Fisher-Yates shuffle for random sampling
+  const shuffled = [...data];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled.slice(0, size);
+};
+
+export const filterDataset = (data: PatientRecord[], column: string, value: string, mode: 'equals' | 'not_equals' | 'contains' | 'is_empty'): PatientRecord[] => {
+    return data.filter(row => {
+        const cell = row[column];
+        const strCell = String(cell === null || cell === undefined ? '' : cell);
+        
+        switch(mode) {
+            case 'equals': return strCell === value;
+            case 'not_equals': return strCell !== value;
+            case 'contains': return strCell.includes(value);
+            case 'is_empty': return strCell === '';
+            default: return true;
+        }
+    });
+};
+
 export const generateQualityReport = (data: PatientRecord[]): DataQualityReport => {
   if (data.length === 0) {
     return {

@@ -1,3 +1,4 @@
+
 import React, { useCallback, useState } from 'react';
 import { Upload, FileText, AlertCircle, Download } from 'lucide-react';
 import { parseCSV, generateQualityReport, generateDemoData } from '../services/dataService';
@@ -40,7 +41,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataLoaded }) => {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'medpulse_demo_data.csv';
+    a.download = 'vision_smart_demo.csv';
     a.click();
   };
 
@@ -48,7 +49,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataLoaded }) => {
     <div className="w-full max-w-2xl mx-auto p-6">
       <div className="text-center mb-8">
         <h2 className="text-2xl font-bold text-slate-800">Description Phase</h2>
-        <p className="text-slate-500">Upload your patient visit data to begin the DIG process.</p>
+        <p className="text-slate-500">Upload your business dataset to begin the analysis process.</p>
       </div>
 
       <div

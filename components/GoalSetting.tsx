@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { ColumnProfile, RoadmapStep, Recommendation, PatientRecord, ChartConfig, ReportItem, GoalAnalysisResult } from '../types';
 import { generateGoalRoadmap, generateRecommendationAnalysis, generateGoalSuggestions } from '../services/geminiService';
@@ -109,7 +110,7 @@ const GoalSetting: React.FC<GoalSettingProps> = ({
           <Target size={32} />
         </div>
         <h2 className="text-3xl font-bold text-slate-800 mb-2">Goal Setting & Analysis</h2>
-        <p className="text-slate-500">Define your objective. MedPulse AI will analyze your data and create a tailored roadmap.</p>
+        <p className="text-slate-500">Define your objective. Vision Smart AI will analyze your data and create a tailored roadmap.</p>
       </div>
 
       {!result ? (
