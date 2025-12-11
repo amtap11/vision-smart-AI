@@ -1,12 +1,12 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { ReportItem, ChartConfig, ReportHistoryItem, ReportReview } from '../types';
-import { generateFinalReport, generateChartContextForReport, evaluateReportQuality } from '../services/geminiService';
+import { generateFinalReport, generateChartContextForReport, evaluateReportQuality, suggestRelevantChart } from '../services/geminiService';
 import { 
   FileText, Trash2, Loader2, Download, ChevronRight, Settings2, Sparkles, CheckCircle2, 
   Filter, Bold, Italic, Underline, List, AlignLeft, AlignCenter, AlignRight, 
   History, Clock, FileSearch, PanelRightClose, PanelRightOpen, ArrowLeftCircle, Bot, ShieldCheck, X, XCircle, LogOut,
-  Share2, Mail, MessageCircle
+  Share2, Mail, MessageCircle, PlusCircle
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -50,6 +50,10 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
   const [isReviewing, setIsReviewing] = useState(false);
   const [reviewResult, setReviewResult] = useState<ReportReview | null>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
+
+  // AI Insert Visual State
+  const [aiSuggestion, setAiSuggestion] = useState<{ chartId: string, reasoning: string } | null>(null);
+  const [isThinking, setIsThinking] = useState(false);
 
   // Share State
   const [showShareMenu, setShowShareMenu] = useState(false);
@@ -230,7 +234,26 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
         alert("Could not insert chart. Please try again.");
     } finally {
         setInsertingId(null);
+        setAiSuggestion(null); // Close suggestion modal if open
     }
+  };
+
+  const handleAiSuggestVisual = async () => {
+      if (!editorRef.current) return;
+      setIsThinking(true);
+      
+      const text = editorRef.current.innerText;
+      const chartOptions = items
+          .filter(i => i.type === 'chart')
+          .map(i => ({ id: i.id, title: i.title, type: (i.content as any).config.type }));
+
+      const suggestion = await suggestRelevantChart(text, chartOptions);
+      setAiSuggestion(suggestion);
+      setIsThinking(false);
+      
+      if (!suggestion) {
+          alert("AI couldn't find a relevant visual for this context.");
+      }
   };
 
   const handleQualityCheck = async () => {
@@ -421,7 +444,7 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
                     <XAxis type="number" dataKey="x" tick={{fontSize: 9}} axisLine={false} tickLine={false} />
                     <YAxis type="number" dataKey="y" tick={{fontSize: 9}} axisLine={false} tickLine={false} />
                     <Tooltip cursor={{ strokeDasharray: '3 3' }} />
-                    <Scatter name={item.title} data={chartData} fill="#10b981">
+                    <Scatter name={item.title} data={chartData}>
                         {chartData.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
@@ -672,6 +695,18 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
                  <option value="7">Huge</option>
              </select>
              <input type="color" onChange={(e) => execCmd('foreColor', e.target.value)} className="w-6 h-6 border-none cursor-pointer" />
+             <div className="w-px h-6 bg-slate-300 mx-1"></div>
+             
+             {/* AI Insert Visual Button */}
+             <button 
+                onClick={handleAiSuggestVisual}
+                disabled={isThinking}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-lg hover:shadow-lg transition-all active:scale-95 text-xs font-bold"
+                title="Ask AI to insert relevant visual"
+             >
+                 {isThinking ? <Loader2 size={14} className="animate-spin" /> : <Bot size={14} />}
+                 AI Insert Visual
+             </button>
           </div>
 
           <div className="flex gap-2">
@@ -803,6 +838,56 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
                </div>
            )}
        </div>
+
+       {/* AI Suggestion Modal */}
+       {aiSuggestion && (
+           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in">
+               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 overflow-hidden animate-in zoom-in-95">
+                   <div className="p-6 bg-gradient-to-br from-violet-50 to-indigo-50 border-b border-indigo-100">
+                       <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                           <Bot size={24} className="text-indigo-600" /> AI Agent Suggestion
+                       </h3>
+                       <p className="text-sm text-slate-600 mt-1">Based on your recent report context.</p>
+                   </div>
+                   
+                   <div className="p-6 space-y-4">
+                       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                           <h4 className="font-bold text-slate-800 mb-2 text-sm flex items-center gap-2">
+                               <Sparkles size={14} className="text-amber-500" /> Recommendation
+                           </h4>
+                           <p className="text-sm text-slate-600 italic">"{aiSuggestion.reasoning}"</p>
+                       </div>
+
+                       <div className="border rounded-xl p-2 bg-slate-50">
+                           <div className="text-xs font-bold text-slate-400 uppercase mb-2 ml-1">Visual Preview</div>
+                           {/* Render the suggested chart */}
+                           {(() => {
+                               const item = items.find(i => i.id === aiSuggestion.chartId);
+                               return item ? renderMiniChart(item, true) : <div className="text-red-500 text-xs">Chart not found</div>;
+                           })()}
+                       </div>
+                   </div>
+
+                   <div className="p-4 bg-white border-t border-slate-100 flex justify-end gap-3">
+                       <button 
+                           onClick={() => setAiSuggestion(null)}
+                           className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium text-sm transition-colors"
+                       >
+                           Cancel
+                       </button>
+                       <button 
+                           onClick={() => {
+                               const item = items.find(i => i.id === aiSuggestion.chartId);
+                               if (item) handleSmartInsertChart(item);
+                           }}
+                           className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-bold text-sm shadow-md shadow-indigo-200 transition-colors"
+                       >
+                           Insert This Visual
+                       </button>
+                   </div>
+               </div>
+           </div>
+       )}
 
        {/* Review Modal */}
        {showReviewModal && (

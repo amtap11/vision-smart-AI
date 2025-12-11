@@ -9,7 +9,7 @@ const MODEL_NAME = "gemini-2.5-flash";
 
 const ai = new GoogleGenAI({ apiKey });
 
-// ... (Previous functions: generateIntrospectionQuestions, generateMoreIntrospectionQuestions, generateGoalSuggestions, generateGoalRoadmap, generateRecommendationAnalysis, generateQuestionAnalysis, generateChartExplanation, generateSingleChartConfig, generateFinalReport, generateChartContextForReport, evaluateReportQuality, analyzeCrossFilePatterns, suggestTransformations, suggestMergeStrategy, suggestStatisticalAnalyses, getMockQuestions, getMockRoadmap) ...
+// ... (Previous functions: generateIntrospectionQuestions, generateMoreIntrospectionQuestions, generateGoalSuggestions, generateGoalRoadmap, generateRecommendationAnalysis, generateQuestionAnalysis, generateChartExplanation, generateSingleChartConfig, generateFinalReport, generateChartContextForReport, evaluateReportQuality, analyzeCrossFilePatterns, suggestTransformations, suggestMergeStrategy, suggestStatisticalAnalyses, getModelAdvisorResponse, suggestClusteringSetup, suggestForecastingSetup, explainStatistic, getMockQuestions, getMockRoadmap) ...
 
 export const generateIntrospectionQuestions = async (
   columns: ColumnProfile[], 
@@ -529,6 +529,67 @@ export const generateFinalReport = async (
 };
 
 // --- NEW FUNCTIONS FOR AGENTIC BEHAVIOR ---
+
+export const suggestRelevantChart = async (
+  reportContext: string,
+  charts: { id: string, title: string, type: string }[]
+): Promise<{ chartId: string, reasoning: string } | null> => {
+  if (!apiKey) return null;
+
+  const chartsList = charts.map(c => `- ID: ${c.id}, Title: "${c.title}", Type: ${c.type}`).join('\n');
+
+  const prompt = `
+    Role: Editor Assistant
+    Task: Suggest the most relevant chart to insert into the report based on the current text context.
+    
+    Report Text Context (The cursor is implicitly at the end of this text):
+    "${reportContext.substring(Math.max(0, reportContext.length - 1500))}"
+
+    Available Charts:
+    ${chartsList}
+
+    Rules:
+    1. Analyze the last few sentences of the report context.
+    2. Identify if any of the available charts provide data that supports, illustrates, or contradicts the text.
+    3. Select the SINGLE best chart.
+    4. If no chart is clearly relevant to the immediate text, return null.
+    
+    Output JSON:
+    {
+      "chartId": "id_of_best_match_or_null",
+      "reasoning": "A short, 1-sentence explanation of why this chart fits here."
+    }
+  `;
+  
+  try {
+    const response = await ai.models.generateContent({
+      model: MODEL_NAME,
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            chartId: { type: Type.STRING },
+            reasoning: { type: Type.STRING }
+          },
+          required: ["chartId", "reasoning"]
+        }
+      }
+    });
+
+    if (response.text) {
+      const result = JSON.parse(response.text);
+      if (result.chartId && result.chartId !== "null") {
+          return result;
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error("Suggest Chart Error:", error);
+    return null;
+  }
+};
 
 export const generateChartContextForReport = async (
   chartConfig: ChartConfig,
