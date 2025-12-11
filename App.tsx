@@ -9,6 +9,7 @@ import Dashboard from './components/Dashboard';
 import ReportGen from './components/ReportGen';
 import MultiFileAnalysis from './components/MultiFileAnalysis';
 import Login from './components/Login';
+import LandingPage from './components/LandingPage';
 import ModeSelection from './components/ModeSelection';
 import { generateQualityReport } from './services/dataService';
 import { AppStage, PatientRecord, DataQualityReport, ChartConfig, RoadmapStep, Recommendation, ReportItem, User, ReportHistoryItem, DraftSession, AnalyticalQuestion, GoalAnalysisResult, Dataset } from './types';
@@ -16,6 +17,9 @@ import { AppStage, PatientRecord, DataQualityReport, ChartConfig, RoadmapStep, R
 const App: React.FC = () => {
   // Auth State
   const [user, setUser] = useState<User | null>(null);
+  
+  // View State (Landing -> Login -> App)
+  const [showLanding, setShowLanding] = useState(true);
 
   // App State
   const [stage, setStage] = useState<AppStage>(AppStage.MODE_SELECTION);
@@ -84,6 +88,7 @@ const App: React.FC = () => {
     if (savedUser) {
       const parsedUser = JSON.parse(savedUser);
       setUser(parsedUser);
+      setShowLanding(false); // Skip landing if logged in
     }
   }, []);
 
@@ -118,6 +123,7 @@ const App: React.FC = () => {
     localStorage.removeItem('vision_user');
     resetState(false); // Clear everything on logout
     setStage(AppStage.MODE_SELECTION);
+    setShowLanding(true); // Return to landing page
   };
 
   // Modified resetState to support Global Cart persistence
@@ -446,10 +452,19 @@ const App: React.FC = () => {
     }
   };
 
-  if (!user) {
+  // --- RENDER LOGIC BASED ON VIEW STATE ---
+  
+  // 1. Landing Page (Default if not logged in)
+  if (!user && showLanding) {
+    return <LandingPage onSignIn={() => setShowLanding(false)} />;
+  }
+
+  // 2. Login Page
+  if (!user && !showLanding) {
     return <Login onLogin={handleLogin} />;
   }
 
+  // 3. Main App Layout (Logged in)
   return (
     <Layout 
       currentStage={stage} 

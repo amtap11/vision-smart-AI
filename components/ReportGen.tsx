@@ -5,7 +5,8 @@ import { generateFinalReport, generateChartContextForReport, evaluateReportQuali
 import { 
   FileText, Trash2, Loader2, Download, ChevronRight, Settings2, Sparkles, CheckCircle2, 
   Filter, Bold, Italic, Underline, List, AlignLeft, AlignCenter, AlignRight, 
-  History, Clock, FileSearch, PanelRightClose, PanelRightOpen, ArrowLeftCircle, Bot, ShieldCheck, X, XCircle, LogOut
+  History, Clock, FileSearch, PanelRightClose, PanelRightOpen, ArrowLeftCircle, Bot, ShieldCheck, X, XCircle, LogOut,
+  Share2, Mail, MessageCircle
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -49,6 +50,9 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
   const [isReviewing, setIsReviewing] = useState(false);
   const [reviewResult, setReviewResult] = useState<ReportReview | null>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
+
+  // Share State
+  const [showShareMenu, setShowShareMenu] = useState(false);
 
   // Auto-load history item if provided by parent (Layout)
   useEffect(() => {
@@ -275,6 +279,50 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
       }
   };
 
+  const handleShare = (platform: 'email' | 'whatsapp') => {
+      const text = `Check out this report: ${reportTitle}`;
+      if (platform === 'email') {
+          window.open(`mailto:?subject=${encodeURIComponent(reportTitle)}&body=${encodeURIComponent(text)}`);
+      } else {
+          window.open(`https://wa.me/?text=${encodeURIComponent(text)}`);
+      }
+      setShowShareMenu(false);
+  };
+
+  const handleDragStart = (e: React.DragEvent, item: ReportItem) => {
+      e.dataTransfer.setData('application/vision-item-id', item.id);
+      e.dataTransfer.effectAllowed = 'copy';
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+      e.preventDefault();
+      const id = e.dataTransfer.getData('application/vision-item-id');
+      if (!id) return;
+      
+      const item = items.find(i => i.id === id);
+      if (!item) return;
+
+      // Try to set caret position
+      if ((document as any).caretRangeFromPoint) {
+          const range = (document as any).caretRangeFromPoint(e.clientX, e.clientY);
+          if (range && editorRef.current && editorRef.current.contains(range.commonAncestorContainer)) {
+              const selection = window.getSelection();
+              if (selection) {
+                  selection.removeAllRanges();
+                  selection.addRange(range);
+                  saveSelection();
+              }
+          }
+      }
+
+      await handleSmartInsertChart(item);
+  };
+
   const COLORS = ['#6366f1', '#14b8a6', '#f43f5e', '#f59e0b', '#0ea5e9', '#8b5cf6'];
 
   const CustomizeTreemapContent = (props: any) => {
@@ -312,7 +360,10 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
     if (config.type === 'kpi') {
         const val = data as number;
         return (
-            <div id={`sidebar-chart-${item.id}`} className={`${small ? 'p-3' : 'p-6'} bg-slate-50 rounded-lg text-center border border-slate-200 mb-4`}>
+            <div 
+                id={`sidebar-chart-${item.id}`} 
+                className={`${small ? 'p-3' : 'p-6'} bg-slate-50 rounded-lg text-center border border-slate-200 mb-4`}
+            >
                 <h4 className="text-slate-500 font-medium mb-1 text-xs uppercase">{item.title}</h4>
                 <div className={`${small ? 'text-xl' : 'text-3xl'} font-bold text-slate-800`}>{val.toLocaleString(undefined, { maximumFractionDigits: 1 })}</div>
                 {filterContext && !filterContext.includes('Full') && (
@@ -327,7 +378,10 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
     const chartData = data as any[];
 
     return (
-        <div id={`sidebar-chart-${item.id}`} className={`w-full bg-white border border-slate-200 rounded-lg ${small ? 'h-[200px] p-2' : 'h-[300px] p-4'} mb-4 shadow-sm break-inside-avoid relative`}>
+        <div 
+            id={`sidebar-chart-${item.id}`} 
+            className={`w-full bg-white border border-slate-200 rounded-lg ${small ? 'h-[200px] p-2' : 'h-[300px] p-4'} mb-4 shadow-sm break-inside-avoid relative`}
+        >
             <h4 className="text-xs font-bold text-slate-700 mb-2 text-center truncate">{item.title}</h4>
              {filterContext && !filterContext.includes('Full') && (
                 <div className="text-[10px] text-center mb-1 text-slate-400">
@@ -367,7 +421,11 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
                     <XAxis type="number" dataKey="x" tick={{fontSize: 9}} axisLine={false} tickLine={false} />
                     <YAxis type="number" dataKey="y" tick={{fontSize: 9}} axisLine={false} tickLine={false} />
                     <Tooltip cursor={{ strokeDasharray: '3 3' }} />
-                    <Scatter name={item.title} data={chartData} fill="#10b981" />
+                    <Scatter name={item.title} data={chartData} fill="#10b981">
+                        {chartData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                    </Scatter>
                   </ScatterChart>
                 ) : (
                   <PieChart>
@@ -628,6 +686,32 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
                 <ShieldCheck size={18} /> Review & Score
              </button>
 
+             {/* Share Button Dropdown */}
+             <div className="relative">
+                <button 
+                    onClick={() => setShowShareMenu(!showShareMenu)}
+                    className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 font-medium transition-colors"
+                >
+                    <Share2 size={18} /> Share
+                </button>
+                {showShareMenu && (
+                    <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-in fade-in zoom-in-95">
+                        <button 
+                            onClick={() => handleShare('whatsapp')}
+                            className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-green-50 hover:text-green-700 flex items-center gap-2"
+                        >
+                            <MessageCircle size={16} className="text-green-600"/> WhatsApp
+                        </button>
+                        <button 
+                            onClick={() => handleShare('email')}
+                            className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2"
+                        >
+                            <Mail size={16} className="text-blue-600"/> Email
+                        </button>
+                    </div>
+                )}
+             </div>
+
              {hasDownloaded ? (
                  <button 
                     onClick={onFinishSession} 
@@ -654,6 +738,8 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
                 <div 
                     className="bg-white p-12 rounded-xl shadow-md border border-slate-200 min-h-[1000px] print:shadow-none print:border-none print:p-0 print:w-full"
                     id="report-container"
+                    onDrop={handleDrop}
+                    onDragOver={handleDragOver}
                 >
                     {/* Header */}
                     <div className="mb-8 border-b border-slate-100 pb-4 flex justify-between items-end">
@@ -689,7 +775,12 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
                        <FileSearch size={18} className="text-indigo-600"/> Visual Appendix
                    </h3>
                    {chartItems.map((item, idx) => (
-                       <div key={idx} className="bg-white p-2 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow group relative">
+                       <div 
+                           key={idx} 
+                           className="bg-white p-2 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow group relative cursor-grab active:cursor-grabbing"
+                           draggable={true}
+                           onDragStart={(e) => handleDragStart(e, item)}
+                       >
                            {renderMiniChart(item, true)}
                            
                            {/* Hover Overlay for Insert */}
@@ -703,7 +794,7 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
                                      onClick={() => handleSmartInsertChart(item)}
                                      className="bg-indigo-600 text-white text-sm px-4 py-2 rounded-full shadow-lg font-bold flex items-center gap-2 hover:bg-indigo-700 hover:scale-105 transition-all"
                                    >
-                                       <Bot size={16} /> Smart Insert (Image + AI)
+                                       <Bot size={16} /> Smart Insert
                                    </button>
                                )}
                            </div>
