@@ -8,9 +8,10 @@ import ReportGen from './components/ReportGen';
 import Login from './components/Login';
 import LandingPage from './components/LandingPage';
 import { generateQualityReport, parseCSV } from './services/dataService';
-import { 
-  AppStage, PatientRecord, DataQualityReport, ChartConfig, ReportItem, User, 
-  Dataset, DraftSession, SmartStage, AnalyticalQuestion, GoalAnalysisResult 
+import { apiClient } from './services/apiClient';
+import {
+  AppStage, PatientRecord, DataQualityReport, ChartConfig, ReportItem, User,
+  Dataset, DraftSession, SmartStage, AnalyticalQuestion, GoalAnalysisResult
 } from './types';
 
 const App: React.FC = () => {
@@ -53,12 +54,18 @@ const App: React.FC = () => {
     setAppStage(AppStage.HUB);
   };
 
-  const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem('vision_user');
-    setDatasets([]);
-    setReportItems([]);
-    setShowLanding(true);
+  const handleLogout = async () => {
+    try {
+      await apiClient.logout();
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      setUser(null);
+      localStorage.removeItem('vision_user');
+      setDatasets([]);
+      setReportItems([]);
+      setShowLanding(true);
+    }
   };
 
   const handleFileUpload = () => {

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Lock, Mail, ArrowRight, Loader2, Layers } from 'lucide-react';
+import { Lock, Mail, ArrowRight, Loader2, Layers, UserPlus } from 'lucide-react';
 import { User } from '../types';
+import { apiClient } from '../services/apiClient';
 
 interface LoginProps {
   onLogin: (user: User) => void;
@@ -9,23 +10,34 @@ interface LoginProps {
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    // Simulated API call delay
-    setTimeout(() => {
-      if (email === 'mohammed.alnjjar.ma@gmail.com' && password === 'M#trimed33') {
-        onLogin({ email, name: 'Mohammed Alnjjar' });
+    try {
+      if (isRegistering) {
+        const response = await apiClient.register({ email, password, name });
+        onLogin({
+          email: response.user.email,
+          name: response.user.name,
+        });
       } else {
-        setError('Invalid credentials. Please check your email and password.');
-        setLoading(false);
+        const response = await apiClient.login({ email, password });
+        onLogin({
+          email: response.user.email,
+          name: response.user.name,
+        });
       }
-    }, 1000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Authentication failed. Please try again.');
+      setLoading(false);
+    }
   };
 
   return (
@@ -44,12 +56,29 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         
         <div className="p-8">
           <form onSubmit={handleSubmit} className="space-y-5">
+             {isRegistering && (
+               <div>
+                 <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
+                 <div className="relative">
+                   <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                   <input
+                     type="text"
+                     required
+                     value={name}
+                     onChange={(e) => setName(e.target.value)}
+                     className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                     placeholder="John Doe"
+                   />
+                 </div>
+               </div>
+             )}
+
              <div>
                <label className="block text-sm font-medium text-slate-700 mb-1">Email Address</label>
                <div className="relative">
                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                 <input 
-                   type="email" 
+                 <input
+                   type="email"
                    required
                    value={email}
                    onChange={(e) => setEmail(e.target.value)}
@@ -58,20 +87,24 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                  />
                </div>
              </div>
-             
+
              <div>
                <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
                <div className="relative">
                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                 <input 
-                   type="password" 
+                 <input
+                   type="password"
                    required
                    value={password}
                    onChange={(e) => setPassword(e.target.value)}
                    className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                    placeholder="••••••••"
+                   minLength={8}
                  />
                </div>
+               {isRegistering && (
+                 <p className="mt-1 text-xs text-slate-500">Password must be at least 8 characters</p>
+               )}
              </div>
 
              {error && (
@@ -81,17 +114,29 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                </div>
              )}
 
-             <button 
+             <button
                type="submit"
                disabled={loading}
                className="w-full bg-indigo-600 text-white py-3 rounded-lg font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200 flex items-center justify-center gap-2 disabled:opacity-70"
              >
                {loading ? <Loader2 className="animate-spin" /> : <ArrowRight size={20} />}
-               {loading ? 'Authenticating...' : 'Sign In'}
+               {loading ? 'Processing...' : (isRegistering ? 'Create Account' : 'Sign In')}
              </button>
           </form>
-          
-          <div className="mt-6 text-center text-xs text-slate-400">
+
+          <div className="mt-6 text-center">
+            <button
+              onClick={() => {
+                setIsRegistering(!isRegistering);
+                setError('');
+              }}
+              className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
+            >
+              {isRegistering ? 'Already have an account? Sign in' : 'Need an account? Register'}
+            </button>
+          </div>
+
+          <div className="mt-4 text-center text-xs text-slate-400">
              Protected by Enterprise Security Standards
           </div>
         </div>
