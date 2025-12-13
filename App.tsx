@@ -130,7 +130,7 @@ const App: React.FC = () => {
                                 className="p-6 border border-slate-200 rounded-xl hover:border-purple-500 hover:bg-purple-50 transition-all text-left"
                               >
                                   <div className="font-bold text-purple-700 mb-2">Smart Analysis</div>
-                                  <p className="text-xs text-slate-500">Guided flow: Introspection -> Goal Setting -> Vision Board.</p>
+                                  <p className="text-xs text-slate-500">Guided flow: Introspection &rarr; Goal Setting &rarr; Vision Board.</p>
                               </button>
                           </div>
                       </div>

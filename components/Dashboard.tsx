@@ -12,7 +12,7 @@ import {
   Layout, Loader2, BarChart2, PieChart as PieChartIcon, 
   LineChart as LineChartIcon, Activity, X, PlusCircle, Sparkles, Filter, 
   ScatterChart as ScatterIcon, Map as MapIcon, BoxSelect, AlertTriangle, 
-  Calculator, Pencil, Trash2, Check, GripHorizontal
+  Calculator, Pencil, Trash2, Check
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -197,6 +197,7 @@ const WidgetCard: React.FC<{
         </div>
     );
 });
+WidgetCard.displayName = 'WidgetCard';
 
 const Dashboard: React.FC<DashboardProps> = ({ data, goal, config, onAddToReport }) => {
   const [widgets, setWidgets] = useState<ChartConfig[]>(config);
@@ -206,6 +207,16 @@ const Dashboard: React.FC<DashboardProps> = ({ data, goal, config, onAddToReport
   const [creationMode, setCreationMode] = useState<'ai' | 'manual'>('manual');
   const [customPrompt, setCustomPrompt] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [explanation, setExplanation] = useState<{ isOpen: boolean; title: string; content: string; loading: boolean }>({
+    isOpen: false, title: '', content: '', loading: false
+  });
+
+  const filterableColumns = useMemo(() => getFilterableColumns(data), [data]);
+  const allColumns = useMemo(() => data.length > 0 ? Object.keys(data[0]) : [], [data]);
+  
+  // State initialization moved after useMemo for allColumns to be available, though React state init is lazy. 
+  // However, allColumns isn't available during first render if we used it in useState initializer directly without useEffect.
+  // But we use it in the render body.
   const [manualConfig, setManualConfig] = useState<{
       title: string;
       type: ChartConfig['type'];
@@ -219,13 +230,7 @@ const Dashboard: React.FC<DashboardProps> = ({ data, goal, config, onAddToReport
       xAxisKey: '',
       aggregation: 'sum'
   });
-  const [explanation, setExplanation] = useState<{ isOpen: boolean; title: string; content: string; loading: boolean }>({
-    isOpen: false, title: '', content: '', loading: false
-  });
 
-  const filterableColumns = useMemo(() => getFilterableColumns(data), [data]);
-  const allColumns = useMemo(() => data.length > 0 ? Object.keys(data[0]) : [], [data]);
-  
   const displayData = useMemo(() => {
     if (!filterCol || !filterVal || filterVal === 'All') return data;
     return data.filter(d => String(d[filterCol]) === filterVal);
@@ -267,7 +272,14 @@ const Dashboard: React.FC<DashboardProps> = ({ data, goal, config, onAddToReport
           xAxisKey: manualConfig.xAxisKey || undefined
       };
       setWidgets(prev => [...prev, finalConfig]);
-      setManualConfig({ title: '', type: 'bar', dataKey: allColumns[0] || '', xAxisKey: '', aggregation: 'sum' });
+      // Safely reset config
+      setManualConfig({ 
+          title: '', 
+          type: 'bar', 
+          dataKey: allColumns.length > 0 ? allColumns[0] : '', 
+          xAxisKey: '', 
+          aggregation: 'sum' 
+      });
       setIsEditing(false);
   };
 

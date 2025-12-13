@@ -178,6 +178,7 @@ const MiniChart: React.FC<{ item: ReportItem, small?: boolean, onInsert?: (id: s
         </div>
     );
 });
+MiniChart.displayName = 'MiniChart';
 
 const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onSaveToHistory, onFinishSession, externalLoadItem }) => {
   const [step, setStep] = useState<1 | 2 | 3 | 'history'>(1); 
