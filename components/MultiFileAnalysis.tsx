@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Upload, FileText, Plus, X, GitMerge, TrendingUp, Sparkles, Loader2, Calculator, ArrowRight, Wand2, ArrowDownUp, Split, Combine, CheckCircle2, Layers, PlayCircle, Lightbulb, Sigma, Search, LineChart as LineChartIcon, BoxSelect, Info, HelpCircle, Grid, Clock, Share2, ScatterChart as ScatterIcon, Settings2, MessageSquare, Bot, Send, Download, Scissors, Table2, Trash2, Filter } from 'lucide-react';
 import { parseCSV, generateDatasetSummary, calculatePearsonCorrelation, joinDatasets, unionDatasets, applyTransformation, trainRegressionModel, prepareMultiSourceData, calculateCorrelationMatrix, computeKMeans, computeForecast, exportToCSV, dropColumn, removeRowsWithMissing, createSample, filterDataset } from '../services/dataService';
 import { analyzeCrossFilePatterns, suggestTransformations, suggestMergeStrategy, suggestStatisticalAnalyses, getModelAdvisorResponse, suggestClusteringSetup, suggestForecastingSetup, explainStatistic } from '../services/geminiService';
@@ -16,7 +16,7 @@ const TOOLTIP_CURSOR_SCATTER = { strokeDasharray: '3 3' };
 
 interface MultiFileAnalysisProps {
   datasets: Dataset[];
-  onUpdateDatasets: (datasets: Dataset[]) => void;
+  onUpdateDatasets: React.Dispatch<React.SetStateAction<Dataset[]>>;
   onAnalyzeDataset?: (dataset: Dataset) => void;
   onAddToReport?: (item: Omit<ReportItem, 'id' | 'timestamp'>) => void;
 }
@@ -81,8 +81,8 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ datasets, onUpdat
   const [chatInput, setChatInput] = useState("");
   const [isAdvisorThinking, setIsAdvisorThinking] = useState(false);
   
-  // Using state callback ref instead of useRef to avoid initialization errors in some environments
-  const [chatContainer, setChatContainer] = useState<HTMLDivElement | null>(null);
+  // Ref for auto-scrolling
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   // --- REGRESSION STATE ---
   const [predTargetDatasetId, setPredTargetDatasetId] = useState('');
@@ -115,14 +115,10 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ datasets, onUpdat
   
   // Scroll chat to bottom
   useEffect(() => {
-      if (showChat && chatContainer) {
-          // Find the last child (which should be the spacer div) and scroll to it
-          const lastChild = chatContainer.lastElementChild;
-          if (lastChild) {
-              lastChild.scrollIntoView({ behavior: 'smooth' });
-          }
+      if (showChat) {
+          chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       }
-  }, [chatMessages, showChat, chatContainer]);
+  }, [chatMessages, showChat]);
 
   // --- COMMON HELPERS ---
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -147,25 +143,28 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ datasets, onUpdat
             const results = await Promise.all(promises);
             const valid = results.filter((d): d is Dataset => d !== null);
             if (valid.length > 0) {
-                const updated = [...datasets];
-                valid.forEach((d, idx) => {
-                    d.color = COLORS[(datasets.length + idx) % COLORS.length];
-                    updated.push(d);
+                // Use functional update to prevent race conditions and ensure correct color cycling
+                onUpdateDatasets(prev => {
+                    const updated = [...prev];
+                    valid.forEach((d, idx) => {
+                        d.color = COLORS[(prev.length + idx) % COLORS.length];
+                        updated.push(d);
+                    });
+                    return updated;
                 });
-                onUpdateDatasets(updated);
                 
                 // Initial Advisor Prompt
                 addChatMessage('ai', `I see you loaded ${valid.length} file(s). Ask me to find correlations or build models.`);
-                setShowChat(true); // Open chat on first load to indicate help is available
-                // Set initial shaping dataset
-                if (!shapingDsId) setShapingDsId(valid[0].id);
+                setShowChat(true); 
+                // Set initial shaping dataset if none selected
+                if (!shapingDsId && valid.length > 0) setShapingDsId(valid[0].id);
             } else { alert("Could not parse files."); }
         } catch (error) { alert("Error uploading files"); } finally { setLoadingFile(false); e.target.value = ''; }
     }
   };
 
   const removeDataset = (id: string) => {
-      onUpdateDatasets(datasets.filter(d => d.id !== id));
+      onUpdateDatasets(prev => prev.filter(d => d.id !== id));
       if (shapingDsId === id) setShapingDsId('');
   };
 
@@ -713,7 +712,7 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ datasets, onUpdat
                         <h3 className="font-bold flex items-center gap-2"><Bot size={18}/> AI Model Advisor</h3>
                         <X size={16}/>
                     </div>
-                    <div ref={setChatContainer} className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
                         {chatMessages.map(m => (
                             <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                                 <div className={`max-w-[80%] p-3 rounded-xl text-sm ${m.role === 'user' ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-white border border-slate-200 text-slate-700 rounded-bl-none shadow-sm'}`}>
@@ -724,7 +723,7 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ datasets, onUpdat
                         {isAdvisorThinking && (
                              <div className="flex justify-start"><div className="bg-white p-3 rounded-xl rounded-bl-none shadow-sm border border-slate-200"><Loader2 className="animate-spin text-slate-400" size={16}/></div></div>
                         )}
-                        <div style={{ float:"left", clear: "both" }} ></div>
+                        <div ref={chatEndRef}></div>
                     </div>
                     <div className="p-3 bg-white border-t border-slate-100 flex gap-2">
                         <input 
