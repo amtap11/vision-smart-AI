@@ -785,6 +785,52 @@ export const suggestTransformations = async (
   }
 };
 
+export const interpretCustomTransformation = async (
+    userPrompt: string,
+    columns: string[]
+): Promise<TransformationSuggestion | null> => {
+    if (!apiKey) return null;
+
+    const prompt = `
+        Role: Data Logic Translator
+        Task: Convert the user's natural language data transformation request into a structured JSON configuration.
+        
+        Available Columns: ${columns.join(', ')}
+        User Request: "${userPrompt}"
+
+        Instructions:
+        1. If the user wants to calculate a new field (e.g. "BMI = Weight / Height^2"), use type 'calculation' and action 'math'.
+           - For 'math' action, the 'expression' parameter MUST use 'row["ColumnName"]' syntax. Example: 'row["Weight"] / (row["Height"] * row["Height"])'.
+        2. If the user wants to extract part of a string or date, map to existing actions ('extract_year', etc) if possible, or use 'math' with JS string methods if complex.
+        3. 'targetColumn' should be the column to modify or create. If creating new, infer a good name.
+
+        Output JSON:
+        {
+            "id": "custom_1",
+            "title": "Short descriptive title",
+            "description": "What this does",
+            "type": "calculation",
+            "targetColumn": "NewColName",
+            "action": "math",
+            "parameters": { "expression": "row['ColA'] + row['ColB']" }
+        }
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: MODEL_NAME,
+            contents: prompt,
+            config: { responseMimeType: "application/json" }
+        });
+        
+        if (response.text) return JSON.parse(response.text);
+        return null;
+    } catch (error) {
+        console.error("Custom Transform Error", error);
+        return null;
+    }
+};
+
 export const suggestMergeStrategy = async (
     files: { fileName: string, schema: string }[]
 ): Promise<MergeSuggestion> => {

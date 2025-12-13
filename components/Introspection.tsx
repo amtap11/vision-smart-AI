@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+
+import React, { useEffect, useState, useMemo } from 'react';
 import { ColumnProfile, AnalyticalQuestion, PatientRecord, ReportItem } from '../types';
 import { generateIntrospectionQuestions, generateQuestionAnalysis, generateMoreIntrospectionQuestions } from '../services/geminiService';
-import { generateDatasetSummary } from '../services/dataService';
-import { Sparkles, ArrowRight, Check, X, HelpCircle, Loader2, MessageSquare, Plus, Search, RefreshCw, FileText } from 'lucide-react';
+import { generateDatasetSummary, generateColumnStatistics } from '../services/dataService';
+import { Sparkles, ArrowRight, Check, X, HelpCircle, Loader2, MessageSquare, Plus, Search, RefreshCw, FileText, BarChart3, Hash } from 'lucide-react';
 
 interface IntrospectionProps {
   columns: ColumnProfile[];
@@ -35,6 +36,9 @@ const Introspection: React.FC<IntrospectionProps> = ({
   // Manual & Load More state
   const [customQuestionInput, setCustomQuestionInput] = useState("");
   const [isGeneratingMore, setIsGeneratingMore] = useState(false);
+
+  // Compute Stats for cards
+  const stats = useMemo(() => generateColumnStatistics(data), [data]);
 
   // Sync state up to parent whenever local state changes
   useEffect(() => {
@@ -134,6 +138,56 @@ const Introspection: React.FC<IntrospectionProps> = ({
         >
           Set Goals <ArrowRight size={18} />
         </button>
+      </div>
+
+      {/* Descriptive Statistics Cards */}
+      <div className="space-y-3">
+        <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+             <BarChart3 size={20} className="text-indigo-600" /> Statistical Overview
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+             {stats.slice(0, 8).map((stat, idx) => ( // Show first 8 columns max to keep UI clean
+                 <div key={idx} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+                     <div className="flex justify-between items-start mb-3">
+                         <h4 className="font-bold text-slate-800 text-xs truncate pr-2 w-full" title={stat.name}>{stat.name}</h4>
+                         <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${stat.type === 'numeric' ? 'bg-blue-50 text-blue-600' : 'bg-purple-50 text-purple-600'}`}>
+                             {stat.type === 'numeric' ? '#' : 'ABC'}
+                         </span>
+                     </div>
+                     
+                     {stat.type === 'numeric' ? (
+                         <div className="space-y-1">
+                             <div className="flex justify-between items-center text-xs">
+                                 <span className="text-slate-500">Avg</span>
+                                 <span className="font-mono font-bold text-slate-700">{stat.avg?.toLocaleString(undefined, {maximumFractionDigits: 1})}</span>
+                             </div>
+                             <div className="flex justify-between items-center text-xs">
+                                 <span className="text-slate-500">Min</span>
+                                 <span className="font-mono text-slate-600">{stat.min?.toLocaleString()}</span>
+                             </div>
+                             <div className="flex justify-between items-center text-xs">
+                                 <span className="text-slate-500">Max</span>
+                                 <span className="font-mono text-slate-600">{stat.max?.toLocaleString()}</span>
+                             </div>
+                         </div>
+                     ) : (
+                         <div className="space-y-1">
+                            <div className="text-[10px] text-slate-400 font-semibold uppercase mb-1">Top Values</div>
+                            {stat.topValues?.slice(0, 2).map((val, vIdx) => (
+                                <div key={vIdx} className="flex justify-between items-center text-xs">
+                                    <span className="truncate max-w-[100px] text-slate-700" title={val.value}>{val.value}</span>
+                                    <span className="text-slate-400 bg-slate-50 px-1 rounded">{val.count}</span>
+                                </div>
+                            ))}
+                         </div>
+                     )}
+                     
+                     <div className="mt-3 pt-2 border-t border-slate-100 flex items-center gap-1 text-[10px] text-slate-400">
+                         <Hash size={10} /> {stat.uniqueCount} unique
+                     </div>
+                 </div>
+             ))}
+        </div>
       </div>
 
       {/* Manual Question Entry */}

@@ -8,6 +8,7 @@ export interface Dataset {
   name: string;
   data: PatientRecord[];
   color?: string;
+  qualityScore?: number; // Added for Data Studio
 }
 
 export interface ColumnProfile {
@@ -60,9 +61,9 @@ export interface RoadmapStep {
 export interface ChartConfig {
   title: string;
   type: 'bar' | 'line' | 'pie' | 'kpi' | 'scatter' | 'boxplot' | 'map';
-  dataKey: string; // The metric column (e.g. 'bill_amount') or 'count'
-  xAxisKey?: string; // The dimension column (e.g. 'branch')
-  aggregation: 'sum' | 'count' | 'average' | 'none'; // 'none' for scatter/distribution
+  dataKey: string;
+  xAxisKey?: string;
+  aggregation: 'sum' | 'count' | 'average' | 'none';
   description?: string;
 }
 
@@ -77,7 +78,7 @@ export interface ReportItem {
   id: string;
   type: 'quality' | 'insight' | 'goal' | 'chart' | 'recommendation';
   title: string;
-  content: string | object; // The actual data or text to include
+  content: string | object;
   timestamp: Date;
 }
 
@@ -86,7 +87,7 @@ export interface ReportHistoryItem {
   date: string;
   title: string;
   htmlContent: string;
-  visuals: ReportItem[]; // To reconstruct visuals
+  visuals: ReportItem[];
 }
 
 export interface ReportReview {
@@ -102,26 +103,33 @@ export interface User {
   name: string;
 }
 
+// UPDATED STAGES FOR NEW WORKFLOW
 export enum AppStage {
-  MODE_SELECTION = 'MODE_SELECTION',
-  UPLOAD = 'DESCRIPTION',
-  ANALYSIS = 'INTROSPECTION',
-  GOALS = 'GOAL_SETTING',
-  DASHBOARD = 'DASHBOARD',
-  REPORT = 'REPORT',
-  MULTI_ANALYSIS = 'MULTI_ANALYSIS'
+  HUB = 'HUB', // The main entry point
+  DATA_STUDIO = 'DATA_STUDIO', // The "Kitchen"
+  SMART_ANALYSIS = 'SMART_ANALYSIS', // Formerly Simple Mode
+  DEEP_DIVE = 'DEEP_DIVE', // Formerly Advanced Mode
+  REPORT = 'REPORT' // The Output
+}
+
+// Sub-stages for Smart Analysis linear flow
+export enum SmartStage {
+  INTROSPECTION = 'INTROSPECTION',
+  GOALS = 'GOALS',
+  DASHBOARD = 'DASHBOARD'
 }
 
 export interface DraftSession {
   id: string;
   timestamp: string;
   stage: AppStage;
-  data: PatientRecord[];
-  qualityReport: DataQualityReport;
-  selectedGoal: string;
-  dashboardConfig: ChartConfig[];
+  // We now save the entire dataset array
+  datasets: Dataset[];
   reportItems: ReportItem[];
-  // Persisted Intermediate States
+  // Smart Analysis State
+  smartStage?: SmartStage;
+  selectedGoal?: string;
+  dashboardConfig?: ChartConfig[];
   introspectionQuestions?: AnalyticalQuestion[];
   introspectionAnswers?: Record<number, string>;
   goalSuggestions?: string[];
@@ -133,28 +141,26 @@ export interface TransformationSuggestion {
   id: string;
   title: string;
   description: string;
-  type: 'coding' | 'normalization' | 'extraction';
+  type: 'coding' | 'normalization' | 'extraction' | 'calculation';
   targetColumn: string;
-  action: 'map' | 'uppercase' | 'extract_year' | 'to_numeric';
-  parameters?: Record<string, any>; // e.g., mapping object {'Male': 1, 'Female': 0}
+  action: 'map' | 'uppercase' | 'extract_year' | 'to_numeric' | 'math';
+  parameters?: Record<string, any>;
 }
 
 export interface MergeSuggestion {
   reasoning: string;
   strategy: 'join' | 'union';
-  // For Join
   suggestedKeyA?: string;
   suggestedKeyB?: string;
-  // For Union
   newColumnName?: string; 
   fileMappings?: { fileName: string, suggestedValue: string }[];
   confidence: 'High' | 'Medium' | 'Low';
 }
 
 export interface StatisticalSuggestion {
-  datasetIdX: string; // Refers to the dataset ID for the independent variable
+  datasetIdX: string;
   columnX: string;
-  datasetIdY: string; // Refers to the dataset ID for the dependent variable
+  datasetIdY: string;
   columnY: string;
   type: 'regression' | 'correlation';
   hypothesis: string;
@@ -168,13 +174,13 @@ export interface RegressionModel {
   coefficients: Record<string, number>;
   intercept: number;
   rSquared: number;
-  mae: number; // Mean Absolute Error
+  mae: number;
   predictionData: { actual: number; predicted: number }[];
 }
 
 export interface CorrelationMatrix {
   columns: string[];
-  matrix: number[][]; // N x N matrix of correlation coefficients (-1 to 1)
+  matrix: number[][];
 }
 
 export interface ClusterResult {
@@ -200,5 +206,5 @@ export interface ChatMessage {
   role: 'user' | 'ai';
   text: string;
   timestamp: Date;
-  suggestions?: string[]; // Optional quick replies or actions
+  suggestions?: string[];
 }

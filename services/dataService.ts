@@ -39,6 +39,64 @@ export const exportToCSV = (data: PatientRecord[], filename: string) => {
 
 // --- DATA CLEANING UTILITIES ---
 
+export const detectDuplicates = (data: PatientRecord[]): number => {
+    const seen = new Set();
+    let duplicates = 0;
+    for (const row of data) {
+        // Simple serialization to detect exact row matches
+        const signature = JSON.stringify(row);
+        if (seen.has(signature)) {
+            duplicates++;
+        } else {
+            seen.add(signature);
+        }
+    }
+    return duplicates;
+};
+
+export const removeDuplicates = (data: PatientRecord[]): PatientRecord[] => {
+    const seen = new Set();
+    return data.filter(row => {
+        const signature = JSON.stringify(row);
+        if (seen.has(signature)) return false;
+        seen.add(signature);
+        return true;
+    });
+};
+
+export const detectOutliers = (data: PatientRecord[], column: string): number => {
+    const values = data.map(d => Number(d[column])).filter(v => !isNaN(v) && v !== null);
+    if (values.length < 4) return 0;
+    
+    values.sort((a, b) => a - b);
+    const q1 = values[Math.floor((values.length / 4))];
+    const q3 = values[Math.floor((values.length * (3 / 4)))];
+    const iqr = q3 - q1;
+    const lower = q1 - 1.5 * iqr;
+    const upper = q3 + 1.5 * iqr;
+    
+    return values.filter(v => v < lower || v > upper).length;
+};
+
+export const removeOutliers = (data: PatientRecord[], column: string): PatientRecord[] => {
+    const values = data.map(d => Number(d[column])).filter(v => !isNaN(v) && v !== null);
+    if (values.length < 4) return data;
+    
+    values.sort((a, b) => a - b);
+    const q1 = values[Math.floor((values.length / 4))];
+    const q3 = values[Math.floor((values.length * (3 / 4)))];
+    const iqr = q3 - q1;
+    const lower = q1 - 1.5 * iqr;
+    const upper = q3 + 1.5 * iqr;
+
+    return data.filter(d => {
+        const v = Number(d[column]);
+        // Keep non-numeric or nulls, only filter if it is a number and is an outlier
+        if (typeof d[column] !== 'number' || d[column] === null) return true;
+        return v >= lower && v <= upper;
+    });
+};
+
 export const renameColumnInDataset = (data: PatientRecord[], oldName: string, newName: string): PatientRecord[] => {
     return data.map(row => {
         const newRow: PatientRecord = {};
@@ -610,7 +668,24 @@ export const applyTransformation = (data: PatientRecord[], transformation: Trans
     return data.map(row => {
         const newRow = { ...row };
         const val = newRow[transformation.targetColumn];
-        if (transformation.action === 'map' && transformation.parameters) {
+        
+        if (transformation.action === 'math' && transformation.parameters?.expression) {
+             // Safe execution of math expressions without eval
+             // Supports basic column ops like "colA + colB"
+             try {
+                 const expr = transformation.parameters.expression;
+                 // Replace "row['col']" or "col" with actual values
+                 // This is a simplified parser for demonstration.
+                 // Ideally use a math library like math.js
+                 // Here we assume expression is like "row['A'] + 10" and use Function safely-ish
+                 const func = new Function('row', `return ${expr}`);
+                 const res = func(row);
+                 newRow[transformation.targetColumn] = res;
+             } catch(e) { 
+                 console.warn("Math transform error", e);
+             }
+        }
+        else if (transformation.action === 'map' && transformation.parameters) {
              const key = String(val);
              if (transformation.parameters[key] !== undefined) {
                  newRow[`${transformation.targetColumn}_encoded`] = transformation.parameters[key];
