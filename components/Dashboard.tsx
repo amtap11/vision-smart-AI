@@ -24,9 +24,10 @@ interface DashboardProps {
 
 const COLORS = ['#6366f1', '#14b8a6', '#f43f5e', '#f59e0b', '#0ea5e9', '#8b5cf6', '#ec4899', '#84cc16', '#3b82f6'];
 
-// Static Configurations for Recharts to prevent ref errors
+// Stable constants for Recharts to prevent ref thrashing/null errors
 const TOOLTIP_STYLE = { borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px' };
 const TOOLTIP_CURSOR = { fill: '#f8fafc' };
+const TOOLTIP_CURSOR_SCATTER = { strokeDasharray: '3 3' };
 const AXIS_TICK_STYLE = { fontSize: 10, fill: '#94a3b8' };
 const BAR_MARGIN = { top: 10, right: 10, bottom: 20, left: 0 };
 const SCATTER_MARGIN = { top: 10, right: 10, bottom: 20, left: 0 };
@@ -142,7 +143,9 @@ const WidgetCard: React.FC<{
                         </div>
                     </div>
                 ) : (
-                    <ResponsiveContainer width="100%" height="100%">
+                    // Using a key on ResponsiveContainer forces a clean remount when chart type changes,
+                    // which is crucial for preventing Recharts internal ref errors.
+                    <ResponsiveContainer width="100%" height="100%" key={`${chart.type}-${chart.dataKey}`}>
                         {chart.type === 'bar' ? (
                             <BarChart data={chartData as any[]} margin={BAR_MARGIN}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
@@ -183,7 +186,7 @@ const WidgetCard: React.FC<{
                                 <XAxis type="category" dataKey="x" name={chart.xAxisKey} tick={AXIS_TICK_STYLE} height={40} angle={-15} textAnchor="end" axisLine={false} tickLine={false}/>
                                 <YAxis type="number" dataKey="y" name={chart.dataKey} tick={AXIS_TICK_STYLE} axisLine={false} tickLine={false}/>
                                 <ZAxis type="number" dataKey="z" range={[60, 60]} />
-                                <Tooltip cursor={{strokeDasharray: '3 3'}} contentStyle={TOOLTIP_STYLE} />
+                                <Tooltip cursor={TOOLTIP_CURSOR_SCATTER} contentStyle={TOOLTIP_STYLE} />
                                 <Scatter name={chart.title} data={chartData as any[]} fill="#8b5cf6">
                                     {(chartData as any[]).map((_, index) => (
                                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -197,6 +200,7 @@ const WidgetCard: React.FC<{
         </div>
     );
 });
+// Explicit displayName for React.memo to assist debugging and some HMR tools
 WidgetCard.displayName = 'WidgetCard';
 
 const Dashboard: React.FC<DashboardProps> = ({ data, goal, config, onAddToReport }) => {
@@ -214,9 +218,7 @@ const Dashboard: React.FC<DashboardProps> = ({ data, goal, config, onAddToReport
   const filterableColumns = useMemo(() => getFilterableColumns(data), [data]);
   const allColumns = useMemo(() => data.length > 0 ? Object.keys(data[0]) : [], [data]);
   
-  // State initialization moved after useMemo for allColumns to be available, though React state init is lazy. 
-  // However, allColumns isn't available during first render if we used it in useState initializer directly without useEffect.
-  // But we use it in the render body.
+  // Safe initialization of state
   const [manualConfig, setManualConfig] = useState<{
       title: string;
       type: ChartConfig['type'];
@@ -272,7 +274,7 @@ const Dashboard: React.FC<DashboardProps> = ({ data, goal, config, onAddToReport
           xAxisKey: manualConfig.xAxisKey || undefined
       };
       setWidgets(prev => [...prev, finalConfig]);
-      // Safely reset config
+      // Safely reset config checking for array length
       setManualConfig({ 
           title: '', 
           type: 'bar', 

@@ -181,19 +181,9 @@ const App: React.FC = () => {
               );
 
           case AppStage.DEEP_DIVE:
-              // We reuse MultiFileAnalysis logic but rename it visually in the UI if needed
-              // Ideally, pass datasets to it
               return (
                   <MultiFileAnalysis 
                       onAddToReport={handleAddToReport} 
-                      // Need to adapt MultiFileAnalysis to take datasets prop instead of managing its own state entirely
-                      // For now, we will assume MultiFileAnalysis loads its own state or we pass it context. 
-                      // Given constraints, I'll rely on it managing internal state for regression/clustering, 
-                      // but ideally we should refactor it to accept props. 
-                      // To make this work quickly without breaking `MultiFileAnalysis` internal logic:
-                      // We will render it, but users might need to re-select files there for specific regressions if not passed.
-                      // HOWEVER, `MultiFileAnalysis` currently has its own file upload. 
-                      // We should ideally patch it to accept `datasets` as a prop.
                   />
               );
 
@@ -202,7 +192,7 @@ const App: React.FC = () => {
                   <ReportGen 
                       items={reportItems}
                       onRemoveItem={(id) => setReportItems(prev => prev.filter(i => i.id !== id))}
-                      history={[]} // Simplify for now
+                      history={[]} 
                       onSaveToHistory={() => {}}
                       onFinishSession={() => setAppStage(AppStage.HUB)}
                       externalLoadItem={null}

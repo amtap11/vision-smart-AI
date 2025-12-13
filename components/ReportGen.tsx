@@ -32,7 +32,7 @@ const TOOLTIP_WRAPPER_STYLE = { zIndex: 1000 };
 const AXIS_TICK_STYLE = { fontSize: 9 };
 const LEGEND_WRAPPER_STYLE = { fontSize: '9px' };
 const CHART_MARGIN = { top: 20, right: 20, bottom: 20, left: 20 };
-const BAR_MARGIN = { top: 10, right: 10, bottom: 20, left: 0 }; // Adjusted for specific chart needs if necessary, using generic here for safety
+const BAR_MARGIN = { top: 10, right: 10, bottom: 20, left: 0 }; 
 
 // Custom Treemap Content
 const CustomizeTreemapContent = (props: any) => {
@@ -105,7 +105,8 @@ const MiniChart: React.FC<{ item: ReportItem, small?: boolean, onInsert?: (id: s
                 </div>
              )}
             <div style={{ width: '100%', height: '85%' }}>
-            <ResponsiveContainer width="100%" height="100%">
+            {/* Added key to ResponsiveContainer to force remount on type change, avoiding ref null error */}
+            <ResponsiveContainer width="100%" height="100%" key={`${item.id}-${config.type}`}>
                 {config.type === 'bar' ? (
                   <BarChart data={chartData}>
                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
