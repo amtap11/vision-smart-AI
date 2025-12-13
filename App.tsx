@@ -183,6 +183,8 @@ const App: React.FC = () => {
           case AppStage.DEEP_DIVE:
               return (
                   <MultiFileAnalysis 
+                      datasets={datasets}
+                      onUpdateDatasets={setDatasets}
                       onAddToReport={handleAddToReport} 
                   />
               );
