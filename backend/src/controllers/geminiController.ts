@@ -2,12 +2,14 @@ import { Response } from 'express';
 import { GoogleGenAI, Type } from '@google/genai';
 import { AuthRequest } from '../middleware/auth';
 import { z } from 'zod';
+import { logDataAccess, AuditEventType } from '../utils/auditLogger';
+import { sanitizeString, truncateString } from '../utils/sanitization';
 
 const geminiApiKey = process.env.GEMINI_API_KEY;
 const ai = geminiApiKey ? new GoogleGenAI({ apiKey: geminiApiKey }) : null;
 
 const analyzeRequestSchema = z.object({
-  prompt: z.string().min(1, 'Prompt is required'),
+  prompt: z.string().min(1, 'Prompt is required').max(10000, 'Prompt is too long'),
   context: z.record(z.any()).optional(),
   model: z.string().default('gemini-2.5-flash'),
   responseMimeType: z.string().optional(),
@@ -57,6 +59,8 @@ function convertSchemaToTypeEnum(schema: any): any {
 }
 
 export async function analyzeData(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.userId;
+
   try {
     if (!ai) {
       res.status(503).json({
@@ -75,15 +79,19 @@ export async function analyzeData(req: AuthRequest, res: Response): Promise<void
       fullPrompt = `Context: ${JSON.stringify(context, null, 2)}\n\nPrompt: ${prompt}`;
     }
 
-    // Prepare config for structured responses if needed
-    const config: any = {};
-    if (responseMimeType) {
-      config.responseMimeType = responseMimeType;
-    }
-    if (responseSchema) {
-      // Convert string-based schema back to Type enum for Gemini SDK
-      config.responseSchema = convertSchemaToTypeEnum(responseSchema);
-    }
+    // Log AI operation request
+    await logDataAccess(
+      AuditEventType.DATA_READ,
+      req,
+      userId,
+      'gemini-api',
+      'analyze',
+      {
+        model: modelName,
+        promptLength: prompt.length,
+        hasContext: !!context,
+      }
+    );
 
     // Generate content
     const result = await ai.models.generateContent({

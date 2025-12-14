@@ -3,11 +3,14 @@ import { UserModel } from '../models/User';
 import { generateToken, blacklistToken } from '../utils/jwt';
 import { AuthRequest } from '../middleware/auth';
 import { z } from 'zod';
+import { passwordSchema } from '../utils/passwordPolicy';
+import { sanitizeEmail, sanitizeString } from '../utils/sanitization';
+import { logAuthEvent, AuditEventType } from '../utils/auditLogger';
 
 const registerSchema = z.object({
   email: z.string().email('Invalid email format'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
-  name: z.string().min(2, 'Name must be at least 2 characters'),
+  password: passwordSchema,
+  name: z.string().min(2, 'Name must be at least 2 characters').max(100),
 });
 
 const loginSchema = z.object({
@@ -19,21 +22,33 @@ export async function register(req: Request, res: Response): Promise<void> {
   try {
     const validatedData = registerSchema.parse(req.body);
 
+    // Sanitize inputs
+    const email = sanitizeEmail(validatedData.email);
+    const name = sanitizeString(validatedData.name);
+
     // Check if user already exists
-    const existingUser = await UserModel.findByEmail(validatedData.email);
+    const existingUser = await UserModel.findByEmail(email);
     if (existingUser) {
+      await logAuthEvent(AuditEventType.REGISTRATION, req, undefined, false, 'Email already exists');
       res.status(409).json({ error: 'User with this email already exists' });
       return;
     }
 
     // Create user
-    const user = await UserModel.create(validatedData);
+    const user = await UserModel.create({
+      email,
+      name,
+      password: validatedData.password,
+    });
 
     // Generate token
     const token = generateToken({
       userId: user.id,
       email: user.email,
     });
+
+    // Log successful registration
+    await logAuthEvent(AuditEventType.REGISTRATION, req, user.id, true);
 
     res.status(201).json({
       message: 'User registered successfully',
@@ -46,6 +61,7 @@ export async function register(req: Request, res: Response): Promise<void> {
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
+      await logAuthEvent(AuditEventType.REGISTRATION, req, undefined, false, 'Validation failed');
       res.status(400).json({
         error: 'Validation failed',
         details: error.errors,
@@ -54,19 +70,8 @@ export async function register(req: Request, res: Response): Promise<void> {
     }
 
     console.error('Registration error:', error);
-    
-    // Check for database connection errors
-    if (error instanceof Error && (error.message.includes('connect') || error.message.includes('ECONNREFUSED'))) {
-      res.status(503).json({ 
-        error: 'Database connection failed. Please ensure PostgreSQL is running and DATABASE_URL is set correctly.' 
-      });
-      return;
-    }
-
-    res.status(500).json({ 
-      error: 'Registration failed',
-      message: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : 'Unknown error') : undefined
-    });
+    await logAuthEvent(AuditEventType.REGISTRATION, req, undefined, false, 'Internal error');
+    res.status(500).json({ error: 'Registration failed' });
   }
 }
 
@@ -74,9 +79,13 @@ export async function login(req: Request, res: Response): Promise<void> {
   try {
     const validatedData = loginSchema.parse(req.body);
 
+    // Sanitize email
+    const email = sanitizeEmail(validatedData.email);
+
     // Find user by email
-    const user = await UserModel.findByEmail(validatedData.email);
+    const user = await UserModel.findByEmail(email);
     if (!user) {
+      await logAuthEvent(AuditEventType.LOGIN_FAILURE, req, undefined, false, 'User not found');
       res.status(401).json({ error: 'Invalid email or password' });
       return;
     }
@@ -87,6 +96,7 @@ export async function login(req: Request, res: Response): Promise<void> {
       validatedData.password
     );
     if (!isPasswordValid) {
+      await logAuthEvent(AuditEventType.LOGIN_FAILURE, req, user.id, false, 'Invalid password');
       res.status(401).json({ error: 'Invalid email or password' });
       return;
     }
@@ -96,6 +106,9 @@ export async function login(req: Request, res: Response): Promise<void> {
       userId: user.id,
       email: user.email,
     });
+
+    // Log successful login
+    await logAuthEvent(AuditEventType.LOGIN_SUCCESS, req, user.id, true);
 
     res.json({
       message: 'Login successful',
@@ -108,6 +121,7 @@ export async function login(req: Request, res: Response): Promise<void> {
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
+      await logAuthEvent(AuditEventType.LOGIN_FAILURE, req, undefined, false, 'Validation failed');
       res.status(400).json({
         error: 'Validation failed',
         details: error.errors,
@@ -116,19 +130,8 @@ export async function login(req: Request, res: Response): Promise<void> {
     }
 
     console.error('Login error:', error);
-    
-    // Check for database connection errors
-    if (error instanceof Error && (error.message.includes('connect') || error.message.includes('ECONNREFUSED'))) {
-      res.status(503).json({ 
-        error: 'Database connection failed. Please ensure PostgreSQL is running and DATABASE_URL is set correctly.' 
-      });
-      return;
-    }
-
-    res.status(500).json({ 
-      error: 'Login failed',
-      message: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : 'Unknown error') : undefined
-    });
+    await logAuthEvent(AuditEventType.LOGIN_FAILURE, req, undefined, false, 'Internal error');
+    res.status(500).json({ error: 'Login failed' });
   }
 }
 
@@ -145,9 +148,14 @@ export async function logout(req: AuthRequest, res: Response): Promise<void> {
 
     await blacklistToken(token, userId);
 
+    // Log successful logout
+    await logAuthEvent(AuditEventType.LOGOUT, req, userId, true);
+
     res.json({ message: 'Logout successful' });
   } catch (error) {
+    const userId = req.user?.userId;
     console.error('Logout error:', error);
+    await logAuthEvent(AuditEventType.LOGOUT, req, userId, false, 'Logout failed');
     res.status(500).json({ error: 'Logout failed' });
   }
 }
