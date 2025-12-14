@@ -1,19 +1,54 @@
 import jwt from 'jsonwebtoken';
 import pool from '../config/database';
+import crypto from 'crypto';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-change-in-production';
+// JWT Secret - MUST be set in production
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+  console.error('CRITICAL: JWT_SECRET environment variable is not set!');
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('JWT_SECRET must be set in production');
+  }
+}
+
+// Use a secure random secret in development if not set
+const SECRET = JWT_SECRET || crypto.randomBytes(64).toString('hex');
+
+// JWT Configuration
+const JWT_EXPIRATION = process.env.JWT_EXPIRATION || '1h'; // Shorter expiration (1 hour instead of 7 days)
+const JWT_REFRESH_EXPIRATION = process.env.JWT_REFRESH_EXPIRATION || '7d';
 
 export interface TokenPayload {
   userId: number;
   email: string;
+  tokenVersion?: number; // For token rotation
 }
 
 export function generateToken(payload: TokenPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+  return jwt.sign(payload, SECRET, {
+    expiresIn: JWT_EXPIRATION as string,
+    algorithm: 'HS256',
+    issuer: 'vision-smart-ai',
+    audience: 'vision-smart-ai-client',
+  } as jwt.SignOptions);
+}
+
+export function generateRefreshToken(payload: TokenPayload): string {
+  return jwt.sign(payload, SECRET, {
+    expiresIn: JWT_REFRESH_EXPIRATION as string,
+    algorithm: 'HS256',
+    issuer: 'vision-smart-ai',
+    audience: 'vision-smart-ai-client',
+  } as jwt.SignOptions);
 }
 
 export function verifyToken(token: string): TokenPayload {
-  return jwt.verify(token, JWT_SECRET) as TokenPayload;
+  return jwt.verify(token, SECRET, {
+    algorithms: ['HS256'],
+    issuer: 'vision-smart-ai',
+    audience: 'vision-smart-ai-client',
+  }) as TokenPayload;
 }
 
 export async function blacklistToken(token: string, userId: number): Promise<void> {

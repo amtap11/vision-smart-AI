@@ -1,11 +1,12 @@
 import express from 'express';
 import cors from 'cors';
-import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import authRoutes from './routes/authRoutes';
 import geminiRoutes from './routes/geminiRoutes';
 import { cleanupExpiredTokens } from './utils/jwt';
+import { cleanupOldAuditLogs } from './utils/auditLogger';
+import { securityHeadersMiddleware, additionalSecurityHeaders } from './middleware/securityHeaders';
+import { generalLimiter } from './middleware/rateLimiting';
 
 dotenv.config();
 
@@ -13,25 +14,24 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
-// Security middleware
-app.use(helmet());
+// Trust proxy - important for rate limiting and IP detection
+app.set('trust proxy', 1);
+
+// Security headers
+app.use(securityHeadersMiddleware);
+app.use(additionalSecurityHeaders);
 
 // CORS configuration
 app.use(cors({
   origin: FRONTEND_URL,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
+  exposedHeaders: ['X-CSRF-Token'],
 }));
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.',
-});
-
-app.use('/api/', limiter);
+// Global rate limiting
+app.use('/api/', generalLimiter);
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
@@ -64,6 +64,11 @@ app.use((req, res) => {
 setInterval(() => {
   cleanupExpiredTokens().catch(console.error);
 }, 60 * 60 * 1000);
+
+// Cleanup old audit logs daily (keeps 90 days)
+setInterval(() => {
+  cleanupOldAuditLogs(90).catch(console.error);
+}, 24 * 60 * 60 * 1000);
 
 // Start server
 app.listen(PORT, () => {
