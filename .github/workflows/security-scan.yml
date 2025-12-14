@@ -148,7 +148,7 @@ jobs:
           category: 'trivy-backend'
 
       - name: Scan with Grype (Frontend)
-        uses: anchore/scan-action@v3
+        uses: anchore/scan-action@v7
         continue-on-error: true
         with:
           image: vision-smart-ai-frontend:${{ github.sha }}
@@ -156,7 +156,7 @@ jobs:
           severity-cutoff: high
 
       - name: Scan with Grype (Backend)
-        uses: anchore/scan-action@v3
+        uses: anchore/scan-action@v7
         continue-on-error: true
         with:
           image: vision-smart-ai-backend:${{ github.sha }}
