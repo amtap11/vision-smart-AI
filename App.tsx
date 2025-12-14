@@ -11,7 +11,7 @@ import { generateQualityReport, parseCSV } from './services/dataService';
 import { apiClient } from './services/apiClient';
 import {
   AppStage, PatientRecord, DataQualityReport, ChartConfig, ReportItem, User,
-  Dataset, DraftSession, SmartStage, AnalyticalQuestion, GoalAnalysisResult
+  Dataset, DraftSession, SmartStage, AnalyticalQuestion, GoalAnalysisResult, ReportHistoryItem
 } from './types';
 
 const App: React.FC = () => {
@@ -23,6 +23,13 @@ const App: React.FC = () => {
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [activeDatasetId, setActiveDatasetId] = useState<string | null>(null);
   const [reportItems, setReportItems] = useState<ReportItem[]>([]);
+  const [reportHistory, setReportHistory] = useState<ReportHistoryItem[]>([]);
+  const [reportDraft, setReportDraft] = useState<{ items: ReportItem[], context?: any, title?: string } | null>(null);
+  
+  // Auto-save state for all modules
+  const [smartAnalysisDraft, setSmartAnalysisDraft] = useState<any>(null);
+  const [dataStudioDraft, setDataStudioDraft] = useState<any>(null);
+  const [deepDiveDraft, setDeepDiveDraft] = useState<any>(null);
   
   // Navigation State
   const [appStage, setAppStage] = useState<AppStage>(AppStage.HUB);
@@ -37,14 +44,131 @@ const App: React.FC = () => {
   const [selectedGoal, setSelectedGoal] = useState<string>('');
   const [dashboardConfig, setDashboardConfig] = useState<ChartConfig[]>([]);
 
-  // Load user
+  // Load user and restore all drafts
   useEffect(() => {
     const savedUser = localStorage.getItem('vision_user');
     if (savedUser) {
-      setUser(JSON.parse(savedUser));
+      const parsedUser = JSON.parse(savedUser);
+      setUser(parsedUser);
       setShowLanding(false);
+      
+      // Restore report draft
+      const savedReportDraft = localStorage.getItem('vision_report_draft');
+      if (savedReportDraft) {
+        try {
+          const draft = JSON.parse(savedReportDraft);
+          setReportDraft(draft);
+          if (draft.items && draft.items.length > 0) {
+            setReportItems(draft.items);
+          }
+        } catch (e) {
+          console.error('Error loading report draft:', e);
+        }
+      }
+      
+      // Restore report history
+      const savedReportHistory = localStorage.getItem('vision_report_history');
+      if (savedReportHistory) {
+        try {
+          setReportHistory(JSON.parse(savedReportHistory));
+        } catch (e) {
+          console.error('Error loading report history:', e);
+        }
+      }
+      
+      // Restore datasets
+      const savedDatasets = localStorage.getItem('vision_datasets_full');
+      if (savedDatasets) {
+        try {
+          const restored = JSON.parse(savedDatasets);
+          setDatasets(restored);
+          if (restored.length > 0) {
+            const savedActiveId = localStorage.getItem('vision_active_dataset_id');
+            if (savedActiveId && restored.find((d: Dataset) => d.id === savedActiveId)) {
+              setActiveDatasetId(savedActiveId);
+            } else {
+              setActiveDatasetId(restored[0].id);
+            }
+          }
+        } catch (e) {
+          console.error('Error loading datasets:', e);
+        }
+      }
+      
+      // Restore Smart Analysis state
+      const savedSmartAnalysis = localStorage.getItem('vision_smart_analysis_draft');
+      if (savedSmartAnalysis) {
+        try {
+          const draft = JSON.parse(savedSmartAnalysis);
+          setSmartAnalysisDraft(draft);
+          if (draft.introQuestions) setIntroQuestions(draft.introQuestions);
+          if (draft.introAnswers) setIntroAnswers(draft.introAnswers);
+          if (draft.goalSuggestions) setGoalSuggestions(draft.goalSuggestions);
+          if (draft.goalAnalysisResult) setGoalAnalysisResult(draft.goalAnalysisResult);
+          if (draft.goalRecAnalyses) setGoalRecAnalyses(draft.goalRecAnalyses);
+          if (draft.selectedGoal) setSelectedGoal(draft.selectedGoal);
+          if (draft.dashboardConfig) setDashboardConfig(draft.dashboardConfig);
+          if (draft.smartStage) setSmartStage(draft.smartStage);
+        } catch (e) {
+          console.error('Error loading smart analysis draft:', e);
+        }
+      }
     }
   }, []);
+  
+  // Auto-save report items whenever they change
+  useEffect(() => {
+    if (user && reportItems.length >= 0) {
+      const draft = {
+        items: reportItems,
+        context: {},
+        title: 'Draft Report',
+        savedAt: new Date().toISOString()
+      };
+      setReportDraft(draft);
+      localStorage.setItem('vision_report_draft', JSON.stringify(draft));
+    }
+  }, [reportItems, user]);
+  
+  // Auto-save report history
+  useEffect(() => {
+    if (user && reportHistory.length > 0) {
+      localStorage.setItem('vision_report_history', JSON.stringify(reportHistory));
+    }
+  }, [reportHistory, user]);
+  
+  // Auto-save datasets
+  useEffect(() => {
+    if (user && datasets.length > 0) {
+      try {
+        localStorage.setItem('vision_datasets_full', JSON.stringify(datasets));
+        if (activeDatasetId) {
+          localStorage.setItem('vision_active_dataset_id', activeDatasetId);
+        }
+      } catch (e) {
+        console.error('Error saving datasets (may be too large):', e);
+      }
+    }
+  }, [datasets, activeDatasetId, user]);
+  
+  // Auto-save Smart Analysis state
+  useEffect(() => {
+    if (user) {
+      const draft = {
+        introQuestions,
+        introAnswers,
+        goalSuggestions,
+        goalAnalysisResult,
+        goalRecAnalyses,
+        selectedGoal,
+        dashboardConfig,
+        smartStage,
+        savedAt: new Date().toISOString()
+      };
+      setSmartAnalysisDraft(draft);
+      localStorage.setItem('vision_smart_analysis_draft', JSON.stringify(draft));
+    }
+  }, [introQuestions, introAnswers, goalSuggestions, goalAnalysisResult, goalRecAnalyses, selectedGoal, dashboardConfig, smartStage, user]);
 
   // --- ACTIONS ---
 
@@ -91,7 +215,18 @@ const App: React.FC = () => {
           }
           
           if (newDatasets.length > 0) {
-              setDatasets(prev => [...prev, ...newDatasets]);
+              setDatasets(prev => {
+                const updated = [...prev, ...newDatasets];
+                // Auto-save datasets immediately
+                if (user) {
+                  try {
+                    localStorage.setItem('vision_datasets_full', JSON.stringify(updated));
+                  } catch (e) {
+                    console.error('Error saving datasets:', e);
+                  }
+                }
+                return updated;
+              });
               if (!activeDatasetId) setActiveDatasetId(newDatasets[0].id);
           }
       };
@@ -99,7 +234,18 @@ const App: React.FC = () => {
   };
 
   const handleDeleteDataset = (id: string) => {
-      setDatasets(prev => prev.filter(d => d.id !== id));
+      setDatasets(prev => {
+        const updated = prev.filter(d => d.id !== id);
+        // Auto-save after deletion
+        if (user) {
+          try {
+            localStorage.setItem('vision_datasets_full', JSON.stringify(updated));
+          } catch (e) {
+            console.error('Error saving datasets:', e);
+          }
+        }
+        return updated;
+      });
       if (activeDatasetId === id) setActiveDatasetId(null);
   };
 
@@ -109,7 +255,21 @@ const App: React.FC = () => {
       id: Math.random().toString(36).substr(2, 9),
       timestamp: new Date()
     };
-    setReportItems(prev => [...prev, newItem]);
+    setReportItems(prev => {
+      const updated = [...prev, newItem];
+      // Auto-save immediately
+      if (user) {
+        const draft = {
+          items: updated,
+          context: {},
+          title: 'Draft Report',
+          savedAt: new Date().toISOString()
+        };
+        localStorage.setItem('vision_report_draft', JSON.stringify(draft));
+        setReportDraft(draft);
+      }
+      return updated;
+    });
   };
 
   // --- RENDER CONTENT ---
@@ -201,10 +361,30 @@ const App: React.FC = () => {
                   <ReportGen 
                       items={reportItems}
                       onRemoveItem={(id) => setReportItems(prev => prev.filter(i => i.id !== id))}
-                      history={[]} 
-                      onSaveToHistory={() => {}}
-                      onFinishSession={() => setAppStage(AppStage.HUB)}
+                      history={reportHistory} 
+                      onSaveToHistory={(item) => setReportHistory(prev => [...prev, item])}
+                      onFinishSession={() => {
+                        setAppStage(AppStage.HUB);
+                        // Don't clear items - keep them for next session (auto-saved)
+                        // setReportItems([]);
+                        // setReportDraft(null);
+                      }}
                       externalLoadItem={null}
+                      onHistoryClick={() => {}}
+                      onDraftSave={() => {
+                        setReportDraft({ items: reportItems, context: {}, title: 'Draft Report' });
+                      }}
+                      onDraftLoad={() => {
+                        if (reportDraft) {
+                          setReportItems(reportDraft.items);
+                        }
+                      }}
+                      onReset={() => {
+                        if (confirm('Are you sure you want to reset the report? This will clear all items.')) {
+                          setReportItems([]);
+                          setReportDraft(null);
+                        }
+                      }}
                   />
               );
           
@@ -229,6 +409,88 @@ const App: React.FC = () => {
       onSetActiveDataset={setActiveDatasetId}
       onDeleteDataset={handleDeleteDataset}
       onUploadClick={handleFileUpload}
+      onHistoryClick={user ? () => {
+        if (appStage === AppStage.REPORT) {
+          const handler = (window as any).__reportHistoryClick;
+          if (handler) handler();
+        } else {
+          // Navigate to report and show history
+          setAppStage(AppStage.REPORT);
+          setTimeout(() => {
+            const handler = (window as any).__reportHistoryClick;
+            if (handler) handler();
+          }, 100);
+        }
+      } : undefined}
+      onDraftClick={user ? () => {
+        if (appStage === AppStage.REPORT) {
+          const saveHandler = (window as any).__reportDraftSave;
+          const loadHandler = (window as any).__reportDraftLoad;
+          if (reportDraft && loadHandler) {
+            loadHandler();
+          } else if (saveHandler) {
+            saveHandler();
+          }
+        } else {
+          // Navigate to report and load draft
+          setAppStage(AppStage.REPORT);
+          setTimeout(() => {
+            if (reportDraft && reportDraft.items) {
+              setReportItems(reportDraft.items);
+            }
+          }, 100);
+        }
+      } : undefined}
+      onResetClick={user ? () => {
+        const moduleName = appStage === AppStage.REPORT ? 'report' : 
+                          appStage === AppStage.SMART_ANALYSIS ? 'smart analysis' :
+                          appStage === AppStage.DEEP_DIVE ? 'deep dive' : 'data studio';
+        if (confirm(`Are you sure you want to reset the ${moduleName}? This will clear all current work.`)) {
+          if (appStage === AppStage.REPORT) {
+            setReportItems([]);
+            setReportDraft(null);
+            localStorage.removeItem('vision_report_draft');
+          } else if (appStage === AppStage.SMART_ANALYSIS) {
+            setSmartAnalysisDraft(null);
+            setIntroQuestions([]);
+            setIntroAnswers({});
+            setGoalSuggestions([]);
+            setGoalAnalysisResult(null);
+            setGoalRecAnalyses({});
+            setSelectedGoal('');
+            setDashboardConfig([]);
+            setSmartStage(SmartStage.INTROSPECTION);
+            localStorage.removeItem('vision_smart_analysis_draft');
+          } else if (appStage === AppStage.DEEP_DIVE) {
+            setDeepDiveDraft(null);
+            localStorage.removeItem('vision_deep_dive_draft');
+          } else {
+            setDataStudioDraft(null);
+            localStorage.removeItem('vision_data_studio_draft');
+          }
+        }
+      } : undefined}
+      historyCount={reportHistory.length}
+      hasDraft={!!(reportDraft || smartAnalysisDraft || dataStudioDraft || deepDiveDraft || reportItems.length > 0 || datasets.length > 0)}
+      reportHistory={reportHistory}
+      reportDraft={reportDraft}
+      onLoadHistoryItem={(item) => {
+        // Navigate to report and load the history item
+        setAppStage(AppStage.REPORT);
+        setTimeout(() => {
+          const handler = (window as any).__reportLoadHistoryItem;
+          if (handler) handler(item);
+        }, 100);
+      }}
+      onLoadDraft={() => {
+        // Navigate to report and load draft
+        setAppStage(AppStage.REPORT);
+        setTimeout(() => {
+          if (reportDraft && reportDraft.items) {
+            setReportItems(reportDraft.items);
+          }
+        }, 100);
+      }}
     >
         {renderContent()}
     </Layout>

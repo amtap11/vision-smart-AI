@@ -1,8 +1,9 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   LayoutDashboard, FileText, ClipboardList, Brain, Layers, LogOut, 
-  FolderOpen, Database, Wand2, Network, HardDrive, Plus, MoreVertical, Trash2, Download
+  FolderOpen, Database, Wand2, Network, HardDrive, Plus, MoreVertical, Trash2, Download,
+  History, FileEdit, RotateCcw, Download as DownloadIcon
 } from 'lucide-react';
 import { AppStage, User, Dataset } from '../types';
 import { exportToCSV } from '../services/dataService';
@@ -19,6 +20,15 @@ interface LayoutProps {
   onDeleteDataset: (id: string) => void;
   onUploadClick: () => void; // Trigger file upload from sidebar
   children: React.ReactNode;
+  onHistoryClick?: () => void;
+  onDraftClick?: () => void;
+  onResetClick?: () => void;
+  historyCount?: number;
+  hasDraft?: boolean;
+  reportHistory?: any[];
+  reportDraft?: any;
+  onLoadHistoryItem?: (item: any) => void;
+  onLoadDraft?: () => void;
 }
 
 const Layout: React.FC<LayoutProps> = ({ 
@@ -26,15 +36,48 @@ const Layout: React.FC<LayoutProps> = ({
   cartItemCount, 
   onNavigate, 
   onLogout, 
-  user, 
+  user,
   datasets,
   activeDatasetId,
   onSetActiveDataset,
   onDeleteDataset,
   onUploadClick,
-  children
+  children,
+  onHistoryClick,
+  onDraftClick,
+  onResetClick,
+  historyCount = 0,
+  hasDraft = false,
+  reportHistory = [],
+  reportDraft = null,
+  onLoadHistoryItem,
+  onLoadDraft
 }) => {
   const [showDrive, setShowDrive] = useState(true);
+  const [showHistoryMenu, setShowHistoryMenu] = useState(false);
+  const [showDraftMenu, setShowDraftMenu] = useState(false);
+  const historyMenuRef = useRef<HTMLDivElement>(null);
+  const draftMenuRef = useRef<HTMLDivElement>(null);
+  
+  // Close menus when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (historyMenuRef.current && !historyMenuRef.current.contains(event.target as Node)) {
+        setShowHistoryMenu(false);
+      }
+      if (draftMenuRef.current && !draftMenuRef.current.contains(event.target as Node)) {
+        setShowDraftMenu(false);
+      }
+    };
+    
+    if (showHistoryMenu || showDraftMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showHistoryMenu, showDraftMenu]);
 
   // Navigation Items
   const navItems = [
@@ -160,6 +203,146 @@ const Layout: React.FC<LayoutProps> = ({
            </div>
 
            <div className="flex items-center gap-3">
+              {/* History, Draft, and Reset buttons - always available when logged in */}
+              {user && (
+                <>
+                  {onHistoryClick && (
+                    <div className="relative" ref={historyMenuRef}>
+                      <button 
+                        onClick={() => setShowHistoryMenu(!showHistoryMenu)}
+                        className="relative px-3 py-2 rounded-xl transition-all flex items-center gap-2 font-medium text-sm border bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300"
+                        title="View Report History"
+                      >
+                        <History size={18} />
+                        <span className="hidden sm:inline">History</span>
+                        {historyCount > 0 && (
+                          <span className="absolute -top-2 -right-2 bg-indigo-500 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full animate-in zoom-in border-2 border-white">
+                            {historyCount}
+                          </span>
+                        )}
+                      </button>
+                      {showHistoryMenu && (
+                        <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-in fade-in zoom-in-95">
+                          <div className="p-3 bg-slate-50 border-b border-slate-100">
+                            <h3 className="font-bold text-slate-800 text-sm">Report History</h3>
+                            <p className="text-xs text-slate-500">Select a report to view or download</p>
+                          </div>
+                          <div className="max-h-96 overflow-y-auto">
+                            {reportHistory && reportHistory.length > 0 ? (
+                              reportHistory.map((item) => (
+                                <div
+                                  key={item.id}
+                                  className="border-b border-slate-100 last:border-b-0"
+                                >
+                                  <button
+                                    onClick={() => {
+                                      if (onLoadHistoryItem) {
+                                        onLoadHistoryItem(item);
+                                        setShowHistoryMenu(false);
+                                      }
+                                    }}
+                                    className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 flex items-start gap-3 transition-colors"
+                                  >
+                                    <FileText size={18} className="text-indigo-600 mt-0.5 flex-shrink-0" />
+                                    <div className="flex-1 min-w-0">
+                                      <div className="font-medium truncate">{item.title}</div>
+                                      <div className="text-xs text-slate-500 mt-1">{item.date}</div>
+                                      <div className="text-xs text-slate-400 mt-1">{item.visuals?.length || 0} visuals</div>
+                                    </div>
+                                  </button>
+                                  <div className="px-4 pb-2 flex gap-2">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        // Trigger download
+                                        const handler = (window as any).__reportDownloadHistoryItem;
+                                        if (handler) handler(item);
+                                        setShowHistoryMenu(false);
+                                      }}
+                                      className="flex-1 px-2 py-1 text-xs bg-indigo-50 text-indigo-700 rounded hover:bg-indigo-100 transition-colors flex items-center justify-center gap-1"
+                                    >
+                                      <DownloadIcon size={12} />
+                                      Download PDF
+                                    </button>
+                                  </div>
+                                </div>
+                              ))
+                            ) : (
+                              <div className="px-4 py-8 text-center text-slate-400 text-sm">
+                                <History size={32} className="mx-auto mb-2 opacity-50" />
+                                <p>No reports generated yet</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {onDraftClick && (
+                    <div className="relative" ref={draftMenuRef}>
+                      <button 
+                        onClick={() => setShowDraftMenu(!showDraftMenu)}
+                        className={`px-3 py-2 rounded-xl transition-all flex items-center gap-2 font-medium text-sm border ${
+                          hasDraft 
+                            ? 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100' 
+                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
+                        }`}
+                        title={hasDraft ? "Continue Draft" : "Save Draft"}
+                      >
+                        <FileEdit size={18} />
+                        <span className="hidden sm:inline">{hasDraft ? 'Draft' : 'Save Draft'}</span>
+                      </button>
+                      {showDraftMenu && (
+                        <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-in fade-in zoom-in-95">
+                          <div className="p-3 bg-slate-50 border-b border-slate-100">
+                            <h3 className="font-bold text-slate-800 text-sm">Draft Reports</h3>
+                            <p className="text-xs text-slate-500">Continue working on saved drafts</p>
+                          </div>
+                          <div className="max-h-96 overflow-y-auto">
+                            {reportDraft && reportDraft.items && reportDraft.items.length > 0 ? (
+                              <button
+                                onClick={() => {
+                                  if (onLoadDraft) {
+                                    onLoadDraft();
+                                    setShowDraftMenu(false);
+                                  }
+                                }}
+                                className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-amber-50 hover:text-amber-700 flex items-start gap-3 transition-colors"
+                              >
+                                <FileEdit size={18} className="text-amber-600 mt-0.5 flex-shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-medium">{reportDraft.title || 'Draft Report'}</div>
+                                  <div className="text-xs text-slate-500 mt-1">
+                                    {reportDraft.items.length} items • Saved {reportDraft.savedAt ? new Date(reportDraft.savedAt).toLocaleString() : 'recently'}
+                                  </div>
+                                  <div className="text-xs text-amber-600 mt-1 font-medium">Click to continue →</div>
+                                </div>
+                              </button>
+                            ) : (
+                              <div className="px-4 py-8 text-center text-slate-400 text-sm">
+                                <FileEdit size={32} className="mx-auto mb-2 opacity-50" />
+                                <p>No draft available</p>
+                                <p className="text-xs mt-1">Your work will be auto-saved as you go</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {onResetClick && (
+                    <button 
+                      onClick={onResetClick}
+                      className="px-3 py-2 rounded-xl transition-all flex items-center gap-2 font-medium text-sm border bg-white border-slate-200 text-slate-600 hover:bg-red-50 hover:border-red-200 hover:text-red-600"
+                      title="Reset Report"
+                    >
+                      <RotateCcw size={18} />
+                      <span className="hidden sm:inline">Reset</span>
+                    </button>
+                  )}
+                </>
+              )}
+              
               <button 
                 onClick={() => onNavigate(AppStage.REPORT)}
                 className={`

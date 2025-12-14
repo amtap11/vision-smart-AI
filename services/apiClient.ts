@@ -62,15 +62,40 @@ class ApiClient {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
 
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      ...options,
-      headers,
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        ...options,
+        headers,
+      });
+    } catch (error) {
+      throw new Error('Network error: Unable to connect to the server. Please ensure the backend is running.');
+    }
 
-    const data = await response.json();
+    // Check if response has content before parsing JSON
+    const contentType = response.headers.get('content-type');
+    const text = await response.text();
+    
+    let data: any;
+    if (text && contentType && contentType.includes('application/json')) {
+      try {
+        data = JSON.parse(text);
+      } catch (parseError) {
+        throw new Error('Invalid JSON response from server');
+      }
+    } else if (text) {
+      // If there's text but it's not JSON, use it as the error message
+      throw new Error(text || 'Request failed');
+    } else {
+      // Empty response
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+      data = {};
+    }
 
     if (!response.ok) {
-      throw new Error(data.error || 'Request failed');
+      throw new Error(data.error || data.message || `Request failed with status ${response.status}`);
     }
 
     return data;
@@ -112,14 +137,28 @@ class ApiClient {
   }
 
   // Gemini API endpoints
-  async analyzeWithGemini(prompt: string, context?: Record<string, any>): Promise<{
+  async analyzeWithGemini(
+    prompt: string, 
+    context?: Record<string, any>,
+    options?: {
+      responseMimeType?: string;
+      responseSchema?: any;
+      model?: string;
+    }
+  ): Promise<{
     success: boolean;
     result: string;
     model: string;
   }> {
     return this.request('/api/gemini/analyze', {
       method: 'POST',
-      body: JSON.stringify({ prompt, context }),
+      body: JSON.stringify({ 
+        prompt, 
+        context,
+        model: options?.model,
+        responseMimeType: options?.responseMimeType,
+        responseSchema: options?.responseSchema
+      }),
     });
   }
 }

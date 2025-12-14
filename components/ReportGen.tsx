@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, LineChart, Line, Legend, Treemap, ScatterChart, Scatter
+  PieChart, Pie, Cell, LineChart, Line, Legend, Treemap, ScatterChart, Scatter, LabelList
 } from 'recharts';
 
 interface ReportGenProps {
@@ -20,6 +20,11 @@ interface ReportGenProps {
   onSaveToHistory: (report: ReportHistoryItem) => void;
   onFinishSession: () => void;
   externalLoadItem: ReportHistoryItem | null;
+  sidebarExpanded?: boolean; // Whether the left sidebar is expanded
+  onHistoryClick?: () => void;
+  onDraftSave?: () => void;
+  onDraftLoad?: () => void;
+  onReset?: () => void;
 }
 
 declare const html2canvas: any;
@@ -54,6 +59,188 @@ const CustomizeTreemapContent = (props: any) => {
       {width > 40 && height > 20 && (
         <text x={x + width / 2} y={y + height / 2 + 7} textAnchor="middle" fill="#fff" fontSize={10} fontWeight="bold">
           {name}
+        </text>
+      )}
+    </g>
+  );
+};
+
+// Custom Vertical Label for Bar Charts
+const CustomVerticalLabel = (props: any) => {
+  const { x, y, width, height, value } = props;
+  if (!value || height < 15) return null;
+  
+  const formattedValue = typeof value === 'number' ? value.toLocaleString() : value;
+  const midX = x + width / 2;
+  const midY = y + height / 2;
+  
+  // Calculate responsive font size based on bar dimensions
+  // Use the smaller dimension (width or height) to determine font size
+  // This ensures labels fit well in both narrow and wide bars
+  const barSize = Math.min(width, height);
+  let fontSize = 8; // Minimum size
+  
+  if (barSize > 100) {
+    fontSize = 14; // Large bars
+  } else if (barSize > 60) {
+    fontSize = 12; // Medium bars
+  } else if (barSize > 40) {
+    fontSize = 10; // Small-medium bars
+  } else if (barSize > 25) {
+    fontSize = 9; // Small bars
+  } else {
+    fontSize = 8; // Very small bars
+  }
+  
+  // Also consider the value length - longer numbers might need smaller font
+  const valueLength = formattedValue.toString().length;
+  if (valueLength > 8 && fontSize > 10) {
+    fontSize = Math.max(9, fontSize - 2);
+  } else if (valueLength > 6 && fontSize > 11) {
+    fontSize = Math.max(10, fontSize - 1);
+  }
+  
+  return (
+    <text
+      x={midX}
+      y={midY}
+      textAnchor="middle"
+      fill="#ffffff"
+      fontSize={fontSize}
+      fontWeight="bold"
+      transform={`rotate(-90 ${midX} ${midY})`}
+      style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}
+    >
+      {formattedValue}
+    </text>
+  );
+};
+
+// Custom XAxis Tick with Multi-line Support and Vertical Text for Many Bars
+const CustomXAxisTick = (props: any) => {
+  const { x, y, payload, index, visibleTicksCount, chartData, colors } = props;
+  const text = payload.value || '';
+  
+  // Estimate available width based on typical chart dimensions
+  // Assume average chart width of ~600px, divide by number of ticks
+  const estimatedChartWidth = 600;
+  const tickCount = visibleTicksCount || (chartData?.length || 10);
+  const estimatedWidthPerTick = estimatedChartWidth / tickCount;
+  
+  // Get the bar color for this tick (if available)
+  const barColor = colors && colors[index % colors.length] ? colors[index % colors.length] : '#64748b';
+  
+  // If more than 6 bars, use vertical text with bar color
+  if (tickCount > 6) {
+    const fontSize = estimatedWidthPerTick < 40 ? 8 : 9;
+    return (
+      <text
+        x={x}
+        y={y}
+        dy={16}
+        textAnchor="middle"
+        fill={barColor}
+        fontSize={fontSize}
+        fontWeight={600}
+        transform={`rotate(-90 ${x} ${y + 16})`}
+      >
+        {text}
+      </text>
+    );
+  }
+  
+  // Calculate responsive font size based on estimated available width
+  let fontSize = 9;
+  if (estimatedWidthPerTick > 80) {
+    fontSize = 11;
+  } else if (estimatedWidthPerTick > 60) {
+    fontSize = 10;
+  } else if (estimatedWidthPerTick < 40) {
+    fontSize = 8;
+  } else {
+    fontSize = 9;
+  }
+  
+  // Split text into words
+  const words = text.split(' ');
+  
+  // Determine if we need two lines based on text length and available space
+  // Rough estimate: each character is ~0.6 * fontSize in width
+  const estimatedTextWidth = text.length * fontSize * 0.6;
+  const needsTwoLines = estimatedTextWidth > estimatedWidthPerTick * 0.9 || words.length > 2;
+  
+  // If text is short or only one word and fits, display on single line
+  if (!needsTwoLines && (words.length <= 1 || text.length <= 15)) {
+    return (
+      <text
+        x={x}
+        y={y}
+        dy={16}
+        textAnchor="middle"
+        fill="#64748b"
+        fontSize={fontSize}
+        fontWeight={500}
+      >
+        {text}
+      </text>
+    );
+  }
+  
+  // Split into two lines - try to balance the length
+  let line1 = '';
+  let line2 = '';
+  
+  // If we have 2 words, split evenly
+  if (words.length === 2) {
+    line1 = words[0];
+    line2 = words[1];
+  } else if (words.length > 2) {
+    // Split at midpoint for better balance
+    const midPoint = Math.ceil(words.length / 2);
+    line1 = words.slice(0, midPoint).join(' ');
+    line2 = words.slice(midPoint).join(' ');
+  } else {
+    // Single long word - try to break it if possible (for very long single words)
+    if (text.length > 20) {
+      const midPoint = Math.ceil(text.length / 2);
+      // Try to break at a space or hyphen if available
+      const breakPoint = text.lastIndexOf(' ', midPoint) || text.lastIndexOf('-', midPoint) || midPoint;
+      line1 = text.substring(0, breakPoint);
+      line2 = text.substring(breakPoint).trim();
+    } else {
+      line1 = text;
+    }
+  }
+  
+  // Adjust font size for two-line labels if space is tight
+  if (needsTwoLines && estimatedWidthPerTick < 50) {
+    fontSize = Math.max(8, fontSize - 1);
+  }
+  
+  return (
+    <g>
+      <text
+        x={x}
+        y={y}
+        dy={8}
+        textAnchor="middle"
+        fill="#64748b"
+        fontSize={fontSize}
+        fontWeight={500}
+      >
+        {line1}
+      </text>
+      {line2 && (
+        <text
+          x={x}
+          y={y}
+          dy={20}
+          textAnchor="middle"
+          fill="#64748b"
+          fontSize={fontSize}
+          fontWeight={500}
+        >
+          {line2}
         </text>
       )}
     </g>
@@ -98,22 +285,37 @@ const MiniChart: React.FC<{ item: ReportItem, small?: boolean, onInsert?: (id: s
                 e.dataTransfer.effectAllowed = 'copy';
             }}
         >
-            <h4 className="text-xs font-bold text-slate-700 mb-2 text-center truncate">{item.title}</h4>
+            <h4 className="text-sm font-bold text-slate-800 mb-3 text-center" style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e293b', paddingBottom: '8px', borderBottom: '1px solid #e2e8f0' }}>{item.title}</h4>
              {filterContext && !filterContext.includes('Full') && (
                 <div className="text-[10px] text-center mb-1 text-slate-400">
                     <Filter size={8} className="inline mr-1" />{filterContext}
                 </div>
              )}
-            <div style={{ width: '100%', height: '85%' }}>
+            <div style={{ width: '100%', height: '85%', padding: config.type === 'pie' ? '10px' : '0' }}>
             {/* Added key to ResponsiveContainer to force remount on type change, avoiding ref null error */}
             <ResponsiveContainer width="100%" height="100%" key={`${item.id}-${config.type}`}>
                 {config.type === 'bar' ? (
                   <BarChart data={chartData}>
                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
-                     <XAxis dataKey="name" tick={AXIS_TICK_STYLE} interval={0} height={30} axisLine={false} tickLine={false}/>
+                     <XAxis 
+                       dataKey="name" 
+                       tick={<CustomXAxisTick chartData={chartData} colors={COLORS} />} 
+                       interval={0} 
+                       height={chartData.length > 6 ? 80 : 50} 
+                       axisLine={false} 
+                       tickLine={false}
+                     />
                      <YAxis tick={AXIS_TICK_STYLE} axisLine={false} tickLine={false}/>
                      <Tooltip wrapperStyle={TOOLTIP_WRAPPER_STYLE}/>
-                     <Bar dataKey="value" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                     <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                       {chartData.map((entry, index) => (
+                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                       ))}
+                       <LabelList 
+                         dataKey="value" 
+                         content={<CustomVerticalLabel />}
+                       />
+                     </Bar>
                   </BarChart>
                 ) : config.type === 'line' ? (
                   <LineChart data={chartData}>
@@ -121,7 +323,19 @@ const MiniChart: React.FC<{ item: ReportItem, small?: boolean, onInsert?: (id: s
                     <XAxis dataKey="name" tick={AXIS_TICK_STYLE} axisLine={false} tickLine={false}/>
                     <YAxis tick={AXIS_TICK_STYLE} axisLine={false} tickLine={false}/>
                     <Tooltip wrapperStyle={TOOLTIP_WRAPPER_STYLE}/>
-                    <Line type="monotone" dataKey="value" stroke="#8b5cf6" strokeWidth={2} dot={{r: 2}} />
+                    <Line type="monotone" dataKey="value" stroke="#8b5cf6" strokeWidth={2} dot={{r: 5, fill: '#8b5cf6', strokeWidth: 2, stroke: '#fff'}}>
+                      <LabelList 
+                        dataKey="value" 
+                        position="top" 
+                        style={{ 
+                          fontSize: '12px', 
+                          fill: '#8b5cf6', 
+                          fontWeight: 'bold',
+                          textShadow: '0 0 3px rgba(255,255,255,0.8), 0 0 3px rgba(255,255,255,0.8)'
+                        }} 
+                        formatter={(value: any) => value?.toLocaleString?.() || value}
+                      />
+                    </Line>
                   </LineChart>
                 ) : config.type === 'map' ? (
                    <Treemap
@@ -146,14 +360,76 @@ const MiniChart: React.FC<{ item: ReportItem, small?: boolean, onInsert?: (id: s
                     </Scatter>
                   </ScatterChart>
                 ) : (
-                  <PieChart>
-                    <Pie data={chartData} cx="50%" cy="50%" innerRadius={30} outerRadius={50} paddingAngle={5} dataKey="value">
+                  <PieChart margin={{ top: 10, right: 10, bottom: 40, left: 10 }}>
+                    <Pie 
+                      data={chartData} 
+                      cx="50%" 
+                      cy="50%" 
+                      innerRadius={small ? 25 : 30} 
+                      outerRadius={small ? 40 : 50} 
+                      paddingAngle={5} 
+                      dataKey="value"
+                      label={({ cx, cy, midAngle, innerRadius, outerRadius, name, value }) => {
+                        const RADIAN = Math.PI / 180;
+                        const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+                        const x = cx + radius * Math.cos(-midAngle * RADIAN);
+                        const y = cy + radius * Math.sin(-midAngle * RADIAN);
+                        
+                        // Format value with full precision
+                        const formattedValue = typeof value === 'number' 
+                          ? value.toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 0 })
+                          : value;
+                        
+                        // Truncate name if too long, but keep value full
+                        const displayName = name.length > 15 ? name.substring(0, 12) + '...' : name;
+                        
+                        return (
+                          <text 
+                            x={x} 
+                            y={y} 
+                            fill="#1e293b" 
+                            textAnchor={x > cx ? 'start' : 'end'} 
+                            dominantBaseline="central"
+                            fontSize={small ? 8 : 9}
+                            fontWeight="bold"
+                            style={{ textShadow: '0 0 3px rgba(255,255,255,0.8)' }}
+                          >
+                            {displayName}: {formattedValue}
+                          </text>
+                        );
+                      }}
+                      labelLine={false}
+                    >
                       {chartData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip wrapperStyle={TOOLTIP_WRAPPER_STYLE}/>
-                    <Legend verticalAlign="bottom" height={20} iconSize={8} wrapperStyle={LEGEND_WRAPPER_STYLE}/>
+                    <Tooltip 
+                      wrapperStyle={TOOLTIP_WRAPPER_STYLE} 
+                      formatter={(value: any, name: any) => [
+                        typeof value === 'number' 
+                          ? value.toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 0 })
+                          : value,
+                        name
+                      ]}
+                    />
+                    <Legend 
+                      verticalAlign="bottom" 
+                      height={60} 
+                      iconSize={10} 
+                      wrapperStyle={{ fontSize: '10px', paddingTop: '10px' }}
+                      formatter={(value: string) => {
+                        // Find the full value for this legend item
+                        const entry = chartData.find((d: any) => d.name === value);
+                        if (entry) {
+                          const formattedValue = typeof entry.value === 'number'
+                            ? entry.value.toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 0 })
+                            : entry.value;
+                          return `${value}: ${formattedValue}`;
+                        }
+                        return value;
+                      }}
+                    />
                   </PieChart>
                 )}
             </ResponsiveContainer>
@@ -181,7 +457,7 @@ const MiniChart: React.FC<{ item: ReportItem, small?: boolean, onInsert?: (id: s
 });
 MiniChart.displayName = 'MiniChart';
 
-const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onSaveToHistory, onFinishSession, externalLoadItem }) => {
+const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onSaveToHistory, onFinishSession, externalLoadItem, onHistoryClick, onDraftSave, onDraftLoad, onReset }) => {
   const [step, setStep] = useState<1 | 2 | 3 | 'history'>(1); 
   const [context, setContext] = useState({
     audience: 'Executive Board',
@@ -213,6 +489,41 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
 
   // Share State
   const [showShareMenu, setShowShareMenu] = useState(false);
+
+  // Sidebar state detection
+  const [sidebarExpanded, setSidebarExpanded] = useState(true);
+  
+  useEffect(() => {
+    // Detect sidebar state by checking the sidebar width
+    const checkSidebar = () => {
+      const sidebar = document.querySelector('aside.bg-slate-900');
+      if (sidebar) {
+        const width = sidebar.getBoundingClientRect().width;
+        setSidebarExpanded(width > 100); // If width > 100px, it's expanded (w-64 = 256px)
+      }
+    };
+    
+    // Check initially
+    checkSidebar();
+    
+    // Watch for changes using MutationObserver
+    const observer = new MutationObserver(checkSidebar);
+    const sidebar = document.querySelector('aside.bg-slate-900');
+    if (sidebar) {
+      observer.observe(sidebar, {
+        attributes: true,
+        attributeFilter: ['class']
+      });
+    }
+    
+    // Also check on resize
+    window.addEventListener('resize', checkSidebar);
+    
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', checkSidebar);
+    };
+  }, []);
 
   // ... (Effects and Helper functions like handleGenerate, saveSelection remain unchanged) ...
   // Re-implementing effects and helpers briefly for context
@@ -271,12 +582,34 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
     const element = document.getElementById(`sidebar-chart-${item.id}`);
     if (!element) { setInsertingId(null); return; }
     try {
-        const canvas = await html2canvas(element, { scale: 2.5, backgroundColor: '#ffffff', useCORS: true, logging: false });
+        // Wait a bit for chart to fully render with colors
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        const canvas = await html2canvas(element, { 
+          scale: 2.5, 
+          backgroundColor: '#ffffff', 
+          useCORS: true, 
+          logging: false,
+          allowTaint: true,
+          onclone: (clonedDoc: Document) => {
+            // Ensure colors are rendered in cloned document
+            const clonedElement = clonedDoc.getElementById(`sidebar-chart-${item.id}`);
+            if (clonedElement) {
+              // Force re-render of SVG elements to ensure colors are captured
+              const svgs = clonedElement.querySelectorAll('svg');
+              svgs.forEach(svg => {
+                svg.style.display = 'block';
+                svg.style.visibility = 'visible';
+              });
+            }
+          }
+        });
         const imgData = canvas.toDataURL('image/png');
         const config = (item.content as any).config;
         const data = (item.content as any).data;
         const aiAnalysis = await generateChartContextForReport(config, data);
-        const smartHtml = `<div class="chart-container" style="page-break-inside: avoid; margin: 30px 0; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);"><div style="padding: 24px; background: white; text-align: center;"><img src="${imgData}" alt="${item.title}" style="max-width: 100%; max-height: 400px; height: auto; display: inline-block;" /></div><div style="background-color: #f8fafc; padding: 20px; border-top: 1px solid #e2e8f0;"><div style="display: flex; align-items: flex-start; gap: 10px;"><span style="font-size: 18px;">🤖</span><div><strong style="color: #4f46e5; display: block; margin-bottom: 4px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em;">AI Insight</strong><p style="font-size: 14px; color: #334155; margin: 0; line-height: 1.6; font-style: italic;">"${aiAnalysis}"</p></div></div></div></div><p><br/></p>`;
+        const escapedTitle = item.title.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        const smartHtml = `<div class="chart-container" style="page-break-inside: avoid; margin: 30px 0; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);"><div style="padding: 24px; background: white;"><h2 style="font-size: 22px; font-weight: 700; color: #0f172a; margin: 0 0 20px 0; text-align: center; border-bottom: 3px solid #6366f1; padding-bottom: 12px; letter-spacing: 0.01em; text-transform: none;">${escapedTitle}</h2><div style="text-align: center; margin-top: 16px;"><img src="${imgData}" alt="${escapedTitle}" style="max-width: 100%; max-height: 500px; height: auto; display: inline-block; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);" /></div></div><div style="background-color: #f8fafc; padding: 20px; border-top: 1px solid #e2e8f0;"><div style="display: flex; align-items: flex-start; gap: 10px;"><span style="font-size: 18px;">🤖</span><div><strong style="color: #4f46e5; display: block; margin-bottom: 4px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em;">AI Insight</strong><p style="font-size: 14px; color: #334155; margin: 0; line-height: 1.6; font-style: italic;">"${aiAnalysis.replace(/"/g, '&quot;')}"</p></div></div></div></div><p><br/></p>`;
         insertHtmlAtCursorOrEnd(smartHtml);
     } catch (error) { console.error("Failed to insert chart", error); alert("Could not insert chart."); } finally { setInsertingId(null); setAiSuggestion(null); }
   };
@@ -302,12 +635,39 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
       } catch (error) { console.error("QA failed", error); } finally { setIsReviewing(false); }
   };
 
-  const handleDownloadPDF = async () => {
-      if (!editorRef.current) return;
+  const handleDownloadPDF = async (customTitle?: string, customContent?: string) => {
+      const targetElement = customContent ? null : editorRef.current;
+      if (!targetElement && !customContent) return;
       setIsDownloading(true);
-      const opt = { margin: [15, 15, 15, 15], filename: `${reportTitle.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true, letterRendering: true, scrollY: 0 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }, pagebreak: { mode: ['avoid-all', 'css', 'legacy'] } };
-      try { await html2pdf().set(opt).from(editorRef.current).save(); setHasDownloaded(true); } catch (err) { console.error("PDF Fail", err); alert("PDF Error"); } finally { setIsDownloading(false); }
+      const title = customTitle || reportTitle;
+      const opt = { margin: [15, 15, 15, 15], filename: `${title.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true, letterRendering: true, scrollY: 0 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }, pagebreak: { mode: ['avoid-all', 'css', 'legacy'] } };
+      try {
+        if (customContent) {
+          // Create temporary element for history item
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = customContent;
+          tempDiv.style.position = 'absolute';
+          tempDiv.style.left = '-9999px';
+          document.body.appendChild(tempDiv);
+          await html2pdf().set(opt).from(tempDiv).save();
+          document.body.removeChild(tempDiv);
+        } else {
+          await html2pdf().set(opt).from(targetElement).save();
+        }
+        setHasDownloaded(true);
+      } catch (err) { console.error("PDF Fail", err); alert("PDF Error"); } finally { setIsDownloading(false); }
   };
+  
+  // Expose download handler for history items
+  useEffect(() => {
+    const downloadHandler = (item: ReportHistoryItem) => {
+      handleDownloadPDF(item.title, item.htmlContent);
+    };
+    (window as any).__reportDownloadHistoryItem = downloadHandler;
+    return () => {
+      delete (window as any).__reportDownloadHistoryItem;
+    };
+  }, [reportTitle]);
 
   const handleShare = (platform: 'email' | 'whatsapp') => {
       const text = `Check out this report: ${reportTitle}`;
@@ -423,8 +783,8 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-8 relative">
-       {/* Toolbar Header */}
-       <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm no-print sticky top-20 z-40">
+       {/* Toolbar Header - Fixed below main layout header, accounting for left sidebar */}
+       <div className={`flex justify-between items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm no-print fixed top-16 right-0 z-40 transition-all duration-300 ${sidebarExpanded ? 'left-64' : 'left-16'}`} style={{ height: 'auto', minHeight: '64px' }}>
           <div className="flex items-center gap-4">
              <button onClick={() => setStep(1)} className="text-slate-400 hover:text-slate-700"><ChevronRight size={20} className="rotate-180"/></button>
              <div><h2 className="text-lg font-bold text-slate-800">{reportTitle}</h2><p className="text-xs text-slate-500">Editable Mode</p></div>
@@ -460,7 +820,7 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
           </div>
        </div>
 
-       <div className="flex gap-6">
+       <div className="flex gap-6 pt-32">
            {/* Document Editor */}
            <div className={`transition-all duration-300 ${showVisualSidebar ? 'w-2/3' : 'w-full mx-auto max-w-5xl'}`}>
                 <div className="bg-white p-12 rounded-xl shadow-md border border-slate-200 min-h-[1000px] print:shadow-none print:border-none print:p-0 print:w-full" id="report-container" onDrop={handleDrop} onDragOver={handleDragOver}>
@@ -474,7 +834,7 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
 
            {/* Visual Sidebar */}
            {showVisualSidebar && chartItems.length > 0 && (
-               <div className="w-1/3 space-y-4 no-print sticky top-40 h-fit max-h-[calc(100vh-200px)] overflow-y-auto pr-2 custom-scrollbar">
+               <div className="w-1/3 space-y-4 no-print sticky top-32 h-fit max-h-[calc(100vh-180px)] overflow-y-auto pr-2 custom-scrollbar">
                    <h3 className="font-bold text-slate-700 flex items-center gap-2 sticky top-0 bg-slate-50 pb-2 z-10"><FileSearch size={18} className="text-indigo-600"/> Visual Appendix</h3>
                    {chartItems.map((item, idx) => (
                        <MiniChart 

@@ -1,13 +1,154 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 import { AnalyticalQuestion, ColumnProfile, RoadmapStep, Recommendation, GoalAnalysisResult, ChartConfig, ReportItem, ReportReview, Dataset, TransformationSuggestion, MergeSuggestion, StatisticalSuggestion } from "../types";
-
-const apiKey = process.env.API_KEY || ''; 
+import { apiClient } from "./apiClient";
 
 // We use 2.5 flash for speed and efficiency in this interactive dashboard
 const MODEL_NAME = "gemini-2.5-flash";
 
-const ai = new GoogleGenAI({ apiKey });
+// Helper to check if we should use backend API (user is authenticated)
+function shouldUseBackendAPI(): boolean {
+  return !!apiClient.getToken();
+}
+
+// Helper to check if Gemini is available (either through backend or direct)
+function isGeminiAvailable(): boolean {
+  // If user is authenticated, backend API should be available
+  if (shouldUseBackendAPI()) {
+    return true;
+  }
+  // Otherwise, check for frontend API key
+  return !!(process.env.API_KEY || process.env.GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY);
+}
+
+// Helper to get error message when API key is missing
+function getApiKeyErrorMessage(): string {
+  if (shouldUseBackendAPI()) {
+    return 'Gemini API key not configured in backend/.env. Please set GEMINI_API_KEY in backend/.env and restart the backend server.';
+  }
+  return 'Gemini API key not configured. Please set GEMINI_API_KEY in backend/.env (and ensure you are logged in) or in .env.local for frontend direct calls.';
+}
+
+// Helper to convert Type enum schema to plain JSON schema for backend
+function convertSchemaToJSON(schema: any): any {
+  if (!schema) return schema;
+  
+  // Convert Type enum values to strings
+  const typeMap: Record<number, string> = {
+    [Type.STRING]: 'string',
+    [Type.NUMBER]: 'number',
+    [Type.INTEGER]: 'integer',
+    [Type.BOOLEAN]: 'boolean',
+    [Type.ARRAY]: 'array',
+    [Type.OBJECT]: 'object',
+  };
+
+  if (typeof schema === 'object' && schema !== null) {
+    const converted: any = Array.isArray(schema) ? [] : {};
+    
+    for (const key in schema) {
+      const value = schema[key];
+      
+      if (value && typeof value === 'object' && 'type' in value) {
+        // Check if type is a Type enum value
+        if (typeof value.type === 'number' && typeMap[value.type]) {
+          converted[key] = {
+            ...value,
+            type: typeMap[value.type]
+          };
+        } else if (value.type === Type.STRING || value.type === 'string') {
+          converted[key] = { ...value, type: 'string' };
+        } else if (value.type === Type.NUMBER || value.type === 'number') {
+          converted[key] = { ...value, type: 'number' };
+        } else if (value.type === Type.INTEGER || value.type === 'integer') {
+          converted[key] = { ...value, type: 'integer' };
+        } else if (value.type === Type.BOOLEAN || value.type === 'boolean') {
+          converted[key] = { ...value, type: 'boolean' };
+        } else if (value.type === Type.ARRAY || value.type === 'array') {
+          converted[key] = {
+            ...value,
+            type: 'array',
+            items: value.items ? convertSchemaToJSON(value.items) : undefined
+          };
+        } else if (value.type === Type.OBJECT || value.type === 'object') {
+          converted[key] = {
+            ...value,
+            type: 'object',
+            properties: value.properties ? convertSchemaToJSON(value.properties) : undefined
+          };
+        } else {
+          converted[key] = convertSchemaToJSON(value);
+        }
+      } else if (typeof value === 'number' && typeMap[value]) {
+        // Direct type enum value
+        converted[key] = typeMap[value];
+      } else if (Array.isArray(value) || (value && typeof value === 'object')) {
+        converted[key] = convertSchemaToJSON(value);
+      } else {
+        converted[key] = value;
+      }
+    }
+    
+    return converted;
+  }
+  
+  return schema;
+}
+
+// Helper to call Gemini - prefers backend API when authenticated
+async function callGemini(
+  prompt: string,
+  options?: {
+    responseMimeType?: string;
+    responseSchema?: any;
+    model?: string;
+  }
+): Promise<string> {
+  const model = options?.model || MODEL_NAME;
+
+  // Convert schema if needed (Type enum to plain JSON)
+  const jsonSchema = options?.responseSchema ? convertSchemaToJSON(options.responseSchema) : undefined;
+
+  // Try backend API first if user is authenticated
+  if (shouldUseBackendAPI()) {
+    try {
+      console.log('Calling backend Gemini API...', { 
+        hasSchema: !!jsonSchema, 
+        hasMimeType: !!options?.responseMimeType,
+        model 
+      });
+      const response = await apiClient.analyzeWithGemini(prompt, undefined, {
+        responseMimeType: options?.responseMimeType,
+        responseSchema: jsonSchema,
+        model
+      });
+      console.log('Backend Gemini API success');
+      return response.result;
+    } catch (error: any) {
+      console.error('Backend Gemini API failed:', error);
+      const errorMessage = error?.message || 'Unknown error';
+      throw new Error(`Failed to call Gemini API through backend: ${errorMessage}. Please ensure backend is running and GEMINI_API_KEY is set in backend/.env`);
+    }
+  }
+
+  // Fallback: direct call (requires frontend API key)
+  const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY || '';
+  if (!apiKey) {
+    throw new Error('Gemini API key not configured. Please set GEMINI_API_KEY in backend/.env and ensure you are logged in, or set it in .env.local for frontend direct calls.');
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+  const response = await ai.models.generateContent({
+    model,
+    contents: prompt,
+    config: {
+      responseMimeType: options?.responseMimeType,
+      responseSchema: options?.responseSchema
+    }
+  });
+
+  return response.text || '';
+}
 
 // ... (Previous functions: generateIntrospectionQuestions, generateMoreIntrospectionQuestions, generateGoalSuggestions, generateGoalRoadmap, generateRecommendationAnalysis, generateQuestionAnalysis, generateChartExplanation, generateSingleChartConfig, generateFinalReport, generateChartContextForReport, evaluateReportQuality, analyzeCrossFilePatterns, suggestTransformations, suggestMergeStrategy, suggestStatisticalAnalyses, getModelAdvisorResponse, suggestClusteringSetup, suggestForecastingSetup, explainStatistic, getMockQuestions, getMockRoadmap) ...
 
@@ -15,8 +156,9 @@ export const generateIntrospectionQuestions = async (
   columns: ColumnProfile[], 
   rowCount: number
 ): Promise<AnalyticalQuestion[]> => {
-  if (!apiKey) {
+  if (!isGeminiAvailable()) {
     console.warn("No API Key provided. Returning mock data.");
+    console.warn(getApiKeyErrorMessage());
     return getMockQuestions();
   }
 
@@ -38,33 +180,31 @@ export const generateIntrospectionQuestions = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              question: { type: Type.STRING },
-              feasibility: { type: Type.STRING, enum: ["High", "Medium", "Low"] },
-              requiredColumns: { type: Type.ARRAY, items: { type: Type.STRING } },
-              reasoning: { type: Type.STRING }
-            },
-            required: ["question", "feasibility", "requiredColumns", "reasoning"]
-          }
+    const responseText = await callGemini(prompt, {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            question: { type: Type.STRING },
+            feasibility: { type: Type.STRING, enum: ["High", "Medium", "Low"] },
+            requiredColumns: { type: Type.ARRAY, items: { type: Type.STRING } },
+            reasoning: { type: Type.STRING }
+          },
+          required: ["question", "feasibility", "requiredColumns", "reasoning"]
         }
       }
     });
 
-    if (response.text) {
-      return JSON.parse(response.text) as AnalyticalQuestion[];
+    if (responseText) {
+      return JSON.parse(responseText) as AnalyticalQuestion[];
     }
     throw new Error("Empty response from AI");
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini API Error:", error);
+    console.error("Error details:", error?.message, error?.stack);
+    // Return mock data on error so the UI doesn't hang
     return getMockQuestions();
   }
 };
@@ -74,7 +214,7 @@ export const generateMoreIntrospectionQuestions = async (
   rowCount: number,
   existingQuestions: string[]
 ): Promise<AnalyticalQuestion[]> => {
-  if (!apiKey) {
+  if (!isGeminiAvailable()) {
     return [
       {
         question: "What is the peak period for activity?",
@@ -105,29 +245,25 @@ export const generateMoreIntrospectionQuestions = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              question: { type: Type.STRING },
-              feasibility: { type: Type.STRING, enum: ["High", "Medium", "Low"] },
-              requiredColumns: { type: Type.ARRAY, items: { type: Type.STRING } },
-              reasoning: { type: Type.STRING }
-            },
-            required: ["question", "feasibility", "requiredColumns", "reasoning"]
-          }
+    const responseText = await callGemini(prompt, {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            question: { type: Type.STRING },
+            feasibility: { type: Type.STRING, enum: ["High", "Medium", "Low"] },
+            requiredColumns: { type: Type.ARRAY, items: { type: Type.STRING } },
+            reasoning: { type: Type.STRING }
+          },
+          required: ["question", "feasibility", "requiredColumns", "reasoning"]
         }
       }
     });
 
-    if (response.text) {
-      return JSON.parse(response.text) as AnalyticalQuestion[];
+    if (responseText) {
+      return JSON.parse(responseText) as AnalyticalQuestion[];
     }
     throw new Error("Empty response from AI");
   } catch (error) {
@@ -137,7 +273,7 @@ export const generateMoreIntrospectionQuestions = async (
 };
 
 export const generateGoalSuggestions = async (dataSummary: string): Promise<string[]> => {
-  if (!apiKey) {
+  if (!isGeminiAvailable()) {
     return [
       "Increase Overall Efficiency",
       "Maximize Revenue/Output",
@@ -159,20 +295,16 @@ export const generateGoalSuggestions = async (dataSummary: string): Promise<stri
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: { type: Type.STRING }
-        }
+    const responseText = await callGemini(prompt, {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING }
       }
     });
 
-    if (response.text) {
-      return JSON.parse(response.text) as string[];
+    if (responseText) {
+      return JSON.parse(responseText) as string[];
     }
     throw new Error("Empty response from AI");
   } catch (error) {
@@ -191,8 +323,9 @@ export const generateGoalRoadmap = async (
   columns: ColumnProfile[],
   dataSummary: string
 ): Promise<GoalAnalysisResult> => {
-  if (!apiKey) {
+  if (!isGeminiAvailable()) {
     console.warn("No API Key. Returning mock roadmap.");
+    console.warn(getApiKeyErrorMessage());
     return getMockRoadmap(goal);
   }
 
@@ -223,64 +356,60 @@ export const generateGoalRoadmap = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            analysis: { 
-              type: Type.STRING,
-              description: "A detailed paragraph analyzing the current situation based on the provided data summary statistics." 
-            },
-            roadmap: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  step: { type: Type.INTEGER },
-                  title: { type: Type.STRING },
-                  action: { type: Type.STRING }
-                }
-              }
-            },
-            recommendations: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  category: { type: Type.STRING, enum: ["Operational", "Financial", "Strategic"] },
-                  title: { type: Type.STRING },
-                  description: { type: Type.STRING },
-                  impact: { type: Type.STRING, enum: ["High", "Medium", "Low"] }
-                }
-              }
-            },
-            dashboardConfig: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  title: { type: Type.STRING },
-                  type: { type: Type.STRING, enum: ["bar", "line", "pie", "kpi", "scatter", "boxplot", "map"] },
-                  dataKey: { type: Type.STRING, description: "Exact column name or 'count'" },
-                  xAxisKey: { type: Type.STRING, description: "Exact column name for categories" },
-                  aggregation: { type: Type.STRING, enum: ["sum", "count", "average", "none"] },
-                  description: { type: Type.STRING }
-                },
-                required: ["title", "type", "dataKey", "aggregation"]
+    const responseText = await callGemini(prompt, {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          analysis: { 
+            type: Type.STRING,
+            description: "A detailed paragraph analyzing the current situation based on the provided data summary statistics." 
+          },
+          roadmap: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                step: { type: Type.INTEGER },
+                title: { type: Type.STRING },
+                action: { type: Type.STRING }
               }
             }
           },
-          required: ["analysis", "roadmap", "recommendations", "dashboardConfig"]
-        }
+          recommendations: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                category: { type: Type.STRING, enum: ["Operational", "Financial", "Strategic"] },
+                title: { type: Type.STRING },
+                description: { type: Type.STRING },
+                impact: { type: Type.STRING, enum: ["High", "Medium", "Low"] }
+              }
+            }
+          },
+          dashboardConfig: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                title: { type: Type.STRING },
+                type: { type: Type.STRING, enum: ["bar", "line", "pie", "kpi", "scatter", "boxplot", "map"] },
+                dataKey: { type: Type.STRING, description: "Exact column name or 'count'" },
+                xAxisKey: { type: Type.STRING, description: "Exact column name for categories" },
+                aggregation: { type: Type.STRING, enum: ["sum", "count", "average", "none"] },
+                description: { type: Type.STRING }
+              },
+              required: ["title", "type", "dataKey", "aggregation"]
+            }
+          }
+        },
+        required: ["analysis", "roadmap", "recommendations", "dashboardConfig"]
       }
     });
 
-    if (response.text) {
-      return JSON.parse(response.text) as GoalAnalysisResult;
+    if (responseText) {
+      return JSON.parse(responseText) as GoalAnalysisResult;
     }
     throw new Error("Empty response from AI");
   } catch (error) {
@@ -294,7 +423,7 @@ export const generateRecommendationAnalysis = async (
   recommendation: Recommendation,
   dataSummary: string
 ): Promise<string> => {
-  if (!apiKey) {
+  if (!isGeminiAvailable()) {
      return "Detailed analysis requires a valid API key. (Mock: This recommendation is crucial because it directly targets inefficiencies...)";
   }
 
@@ -321,11 +450,8 @@ export const generateRecommendationAnalysis = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: prompt,
-    });
-    return response.text || "No analysis generated.";
+    const responseText = await callGemini(prompt);
+    return responseText || "No analysis generated.";
   } catch (error) {
     console.error("Gemini Analysis Error:", error);
     return "Unable to generate detailed analysis at this time.";
@@ -336,7 +462,7 @@ export const generateQuestionAnalysis = async (
   question: string,
   dataSummary: string
 ): Promise<string> => {
-  if (!apiKey) {
+  if (!isGeminiAvailable()) {
     return "The system requires a live API key to answer specific data questions.";
   }
 
@@ -355,11 +481,8 @@ export const generateQuestionAnalysis = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: prompt,
-    });
-    return response.text || "Could not generate an answer.";
+    const responseText = await callGemini(prompt);
+    return responseText || "Could not generate an answer.";
   } catch (error) {
     console.error("Gemini Question Analysis Error:", error);
     return "Error analyzing question.";
@@ -371,7 +494,7 @@ export const generateChartExplanation = async (
   chart: ChartConfig,
   dataSummary: string
 ): Promise<string> => {
-  if (!apiKey) {
+  if (!isGeminiAvailable()) {
     return "This metric helps track progress towards your goal by aggregating key data points.";
   }
 
@@ -396,11 +519,8 @@ export const generateChartExplanation = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: prompt,
-    });
-    return response.text || "No explanation generated.";
+    const responseText = await callGemini(prompt);
+    return responseText || "No explanation generated.";
   } catch (error) {
     console.error("Gemini Metric Explanation Error:", error);
     return "Unable to generate explanation at this time.";
@@ -413,7 +533,7 @@ export const generateSingleChartConfig = async (
   dataSummary: string,
   columnNames: string[]
 ): Promise<ChartConfig> => {
-  if (!apiKey) {
+  if (!isGeminiAvailable()) {
     // Mock response
     return {
        title: "Custom Analysis",
@@ -442,28 +562,24 @@ export const generateSingleChartConfig = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            title: { type: Type.STRING },
-            type: { type: Type.STRING, enum: ["bar", "line", "pie", "kpi", "scatter", "boxplot", "map"] },
-            dataKey: { type: Type.STRING },
-            xAxisKey: { type: Type.STRING },
-            aggregation: { type: Type.STRING, enum: ["sum", "count", "average", "none"] },
-            description: { type: Type.STRING }
-          },
-          required: ["title", "type", "dataKey", "aggregation"]
-        }
+    const responseText = await callGemini(prompt, {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          title: { type: Type.STRING },
+          type: { type: Type.STRING, enum: ["bar", "line", "pie", "kpi", "scatter", "boxplot", "map"] },
+          dataKey: { type: Type.STRING },
+          xAxisKey: { type: Type.STRING },
+          aggregation: { type: Type.STRING, enum: ["sum", "count", "average", "none"] },
+          description: { type: Type.STRING }
+        },
+        required: ["title", "type", "dataKey", "aggregation"]
       }
     });
 
-    if (response.text) {
-      return JSON.parse(response.text) as ChartConfig;
+    if (responseText) {
+      return JSON.parse(responseText) as ChartConfig;
     }
     throw new Error("Empty response from AI");
   } catch (error) {
@@ -476,7 +592,7 @@ export const generateFinalReport = async (
   items: ReportItem[],
   context: { audience: string; tone: string; notes: string }
 ): Promise<string> => {
-  if (!apiKey) {
+  if (!isGeminiAvailable()) {
     return "# Mock Report\n\n**Executive Summary**\nThis is a mock report generated because the API key is missing.\n\n**Included Items:**\n" + items.map(i => `- ${i.title}`).join('\n');
   }
 
@@ -517,11 +633,8 @@ export const generateFinalReport = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: prompt,
-    });
-    return response.text || "Report generation returned empty.";
+    const responseText = await callGemini(prompt);
+    return responseText || "Report generation returned empty.";
   } catch (error) {
     console.error("Gemini Report Generation Error:", error);
     return "Failed to generate report due to an error.";
@@ -534,7 +647,7 @@ export const suggestRelevantChart = async (
   reportContext: string,
   charts: { id: string, title: string, type: string }[]
 ): Promise<{ chartId: string, reasoning: string } | null> => {
-  if (!apiKey) return null;
+  if (!isGeminiAvailable()) return null;
 
   const chartsList = charts.map(c => `- ID: ${c.id}, Title: "${c.title}", Type: ${c.type}`).join('\n');
 
@@ -562,24 +675,20 @@ export const suggestRelevantChart = async (
   `;
   
   try {
-    const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            chartId: { type: Type.STRING },
-            reasoning: { type: Type.STRING }
-          },
-          required: ["chartId", "reasoning"]
-        }
+    const responseText = await callGemini(prompt, {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          chartId: { type: Type.STRING },
+          reasoning: { type: Type.STRING }
+        },
+        required: ["chartId", "reasoning"]
       }
     });
 
-    if (response.text) {
-      const result = JSON.parse(response.text);
+    if (responseText) {
+      const result = JSON.parse(responseText);
       if (result.chartId && result.chartId !== "null") {
           return result;
       }
@@ -595,7 +704,7 @@ export const generateChartContextForReport = async (
   chartConfig: ChartConfig,
   dataSample: any[]
 ): Promise<string> => {
-  if (!apiKey) return `AI Analysis: This chart visualizes ${chartConfig.title}.`;
+  if (!isGeminiAvailable()) return `AI Analysis: This chart visualizes ${chartConfig.title}.`;
 
   const prompt = `
     Role: Business Analyst Editor
@@ -612,11 +721,8 @@ export const generateChartContextForReport = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: prompt
-    });
-    return response.text || "Analysis pending.";
+    const responseText = await callGemini(prompt);
+    return responseText || "Analysis pending.";
   } catch (error) {
     return "Analysis unavailable.";
   }
@@ -625,7 +731,7 @@ export const generateChartContextForReport = async (
 export const evaluateReportQuality = async (
   reportHtmlText: string
 ): Promise<ReportReview> => {
-  if (!apiKey) {
+  if (!isGeminiAvailable()) {
     return {
         score: 85,
         strengths: ["Clear structure", "Good visual usage"],
@@ -659,27 +765,23 @@ export const evaluateReportQuality = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-                score: { type: Type.NUMBER },
-                strengths: { type: Type.ARRAY, items: { type: Type.STRING } },
-                weaknesses: { type: Type.ARRAY, items: { type: Type.STRING } },
-                suggestions: { type: Type.ARRAY, items: { type: Type.STRING } },
-                auditorNote: { type: Type.STRING }
-            },
-            required: ["score", "strengths", "weaknesses", "suggestions", "auditorNote"]
-        }
+    const responseText = await callGemini(prompt, {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          score: { type: Type.NUMBER },
+          strengths: { type: Type.ARRAY, items: { type: Type.STRING } },
+          weaknesses: { type: Type.ARRAY, items: { type: Type.STRING } },
+          suggestions: { type: Type.ARRAY, items: { type: Type.STRING } },
+          auditorNote: { type: Type.STRING }
+        },
+        required: ["score", "strengths", "weaknesses", "suggestions", "auditorNote"]
       }
     });
 
-    if (response.text) {
-        return JSON.parse(response.text) as ReportReview;
+    if (responseText) {
+        return JSON.parse(responseText) as ReportReview;
     }
     throw new Error("Empty review");
   } catch (error) {
@@ -697,7 +799,7 @@ export const evaluateReportQuality = async (
 export const analyzeCrossFilePatterns = async (
     fileSummaries: { name: string, summary: string }[]
 ): Promise<string> => {
-    if (!apiKey) {
+    if (!isGeminiAvailable()) {
         return "Cross-file analysis requires a valid API Key. (Mock: Detected patterns between Sales and Marketing datasets...)";
     }
 
@@ -721,11 +823,8 @@ export const analyzeCrossFilePatterns = async (
     `;
 
     try {
-        const response = await ai.models.generateContent({
-            model: MODEL_NAME,
-            contents: prompt
-        });
-        return response.text || "No insights found.";
+        const responseText = await callGemini(prompt);
+        return responseText || "No insights found.";
     } catch (error) {
         console.error("Cross-File AI Error", error);
         return "Failed to generate cross-file insights.";
@@ -738,7 +837,7 @@ export const suggestTransformations = async (
   dataSummary: string,
   columns: string[]
 ): Promise<TransformationSuggestion[]> => {
-  if (!apiKey) return [];
+  if (!isGeminiAvailable()) return [];
 
   const prompt = `
     Role: Data Engineer
@@ -768,16 +867,11 @@ export const suggestTransformations = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
-        model: MODEL_NAME,
-        contents: prompt,
-        config: {
-            responseMimeType: "application/json",
-            // REMOVING responseSchema to avoid "properties should be non-empty for OBJECT type" error on dynamic 'parameters' object
-        }
+    const responseText = await callGemini(prompt, {
+      responseMimeType: "application/json"
     });
 
-    if (response.text) return JSON.parse(response.text) as TransformationSuggestion[];
+    if (responseText) return JSON.parse(responseText) as TransformationSuggestion[];
     throw new Error("Empty response");
   } catch (error) {
       console.error("Transform Suggestion Error", error);
@@ -789,7 +883,7 @@ export const interpretCustomTransformation = async (
     userPrompt: string,
     columns: string[]
 ): Promise<TransformationSuggestion | null> => {
-    if (!apiKey) return null;
+    if (!isGeminiAvailable()) return null;
 
     const prompt = `
         Role: Data Logic Translator
@@ -817,13 +911,11 @@ export const interpretCustomTransformation = async (
     `;
 
     try {
-        const response = await ai.models.generateContent({
-            model: MODEL_NAME,
-            contents: prompt,
-            config: { responseMimeType: "application/json" }
+        const responseText = await callGemini(prompt, {
+          responseMimeType: "application/json"
         });
         
-        if (response.text) return JSON.parse(response.text);
+        if (responseText) return JSON.parse(responseText);
         return null;
     } catch (error) {
         console.error("Custom Transform Error", error);
@@ -834,7 +926,7 @@ export const interpretCustomTransformation = async (
 export const suggestMergeStrategy = async (
     files: { fileName: string, schema: string }[]
 ): Promise<MergeSuggestion> => {
-    if (!apiKey) return {
+    if (!isGeminiAvailable()) return {
         reasoning: "API Key Missing",
         strategy: 'join',
         confidence: "Low"
@@ -867,37 +959,33 @@ export const suggestMergeStrategy = async (
     `;
 
     try {
-        const response = await ai.models.generateContent({
-            model: MODEL_NAME,
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        reasoning: { type: Type.STRING },
-                        strategy: { type: Type.STRING, enum: ["join", "union"] },
-                        suggestedKeyA: { type: Type.STRING },
-                        suggestedKeyB: { type: Type.STRING },
-                        newColumnName: { type: Type.STRING },
-                        fileMappings: { 
-                          type: Type.ARRAY, 
-                          items: {
-                             type: Type.OBJECT,
-                             properties: {
-                                fileName: { type: Type.STRING },
-                                suggestedValue: { type: Type.STRING }
-                             }
-                          }
-                        },
-                        confidence: { type: Type.STRING, enum: ["High", "Medium", "Low"] }
-                    },
-                    required: ["reasoning", "strategy", "confidence"]
+        const responseText = await callGemini(prompt, {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              reasoning: { type: Type.STRING },
+              strategy: { type: Type.STRING, enum: ["join", "union"] },
+              suggestedKeyA: { type: Type.STRING },
+              suggestedKeyB: { type: Type.STRING },
+              newColumnName: { type: Type.STRING },
+              fileMappings: { 
+                type: Type.ARRAY, 
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    fileName: { type: Type.STRING },
+                    suggestedValue: { type: Type.STRING }
+                  }
                 }
-            }
+              },
+              confidence: { type: Type.STRING, enum: ["High", "Medium", "Low"] }
+            },
+            required: ["reasoning", "strategy", "confidence"]
+          }
         });
 
-        if (response.text) return JSON.parse(response.text) as MergeSuggestion;
+        if (responseText) return JSON.parse(responseText) as MergeSuggestion;
         throw new Error("Empty response");
     } catch (error) {
         console.error("Merge Suggestion Error", error);
@@ -912,7 +1000,7 @@ export const suggestMergeStrategy = async (
 export const suggestStatisticalAnalyses = async (
   datasetsSummary: { id: string, name: string, columns: string[] }[]
 ): Promise<StatisticalSuggestion[]> => {
-  if (!apiKey) return [];
+  if (!isGeminiAvailable()) return [];
 
   const context = datasetsSummary.map(d => `Dataset ID: ${d.id}, Name: ${d.name}, Numeric Columns: ${d.columns.join(', ')}`).join('\n');
 
@@ -944,31 +1032,27 @@ export const suggestStatisticalAnalyses = async (
   `;
 
   try {
-     const response = await ai.models.generateContent({
-        model: MODEL_NAME,
-        contents: prompt,
-        config: {
-           responseMimeType: "application/json",
-           responseSchema: {
-              type: Type.ARRAY,
-              items: {
-                  type: Type.OBJECT,
-                  properties: {
-                      datasetIdX: { type: Type.STRING },
-                      columnX: { type: Type.STRING },
-                      datasetIdY: { type: Type.STRING },
-                      columnY: { type: Type.STRING },
-                      type: { type: Type.STRING, enum: ["regression", "correlation"] },
-                      hypothesis: { type: Type.STRING },
-                      potentialInsight: { type: Type.STRING }
-                  },
-                  required: ["datasetIdX", "columnX", "datasetIdY", "columnY", "type", "hypothesis"]
-              }
-           }
-        }
+     const responseText = await callGemini(prompt, {
+       responseMimeType: "application/json",
+       responseSchema: {
+         type: Type.ARRAY,
+         items: {
+           type: Type.OBJECT,
+           properties: {
+             datasetIdX: { type: Type.STRING },
+             columnX: { type: Type.STRING },
+             datasetIdY: { type: Type.STRING },
+             columnY: { type: Type.STRING },
+             type: { type: Type.STRING, enum: ["regression", "correlation"] },
+             hypothesis: { type: Type.STRING },
+             potentialInsight: { type: Type.STRING }
+           },
+           required: ["datasetIdX", "columnX", "datasetIdY", "columnY", "type", "hypothesis"]
+         }
+       }
      });
 
-     if (response.text) return JSON.parse(response.text) as StatisticalSuggestion[];
+     if (responseText) return JSON.parse(responseText) as StatisticalSuggestion[];
      throw new Error("Empty response");
   } catch (error) {
      console.error("Statistical Suggestion Error", error);
@@ -986,7 +1070,7 @@ export const getModelAdvisorResponse = async (
         lastResult?: any 
     }
 ): Promise<{ text: string, action?: { type: string, payload: any } }> => {
-    if (!apiKey) return { text: "I can help you optimize your model. (API Key required for real advice)" };
+    if (!isGeminiAvailable()) return { text: "I can help you optimize your model. (API Key required for real advice)" };
 
     const dsContext = context.datasets.map(d => `ID: "${d.id}", Name: "${d.name}", Cols: [${d.columns.join(', ')}]`).join('\n');
 
@@ -1025,16 +1109,11 @@ export const getModelAdvisorResponse = async (
     `;
 
     try {
-        const response = await ai.models.generateContent({
-            model: MODEL_NAME,
-            contents: prompt,
-            config: { 
-                responseMimeType: "application/json"
-                // Removed responseSchema to allow dynamic 'payload' object
-            }
+        const responseText = await callGemini(prompt, {
+          responseMimeType: "application/json"
         });
         
-        if (response.text) return JSON.parse(response.text);
+        if (responseText) return JSON.parse(responseText);
         return { text: "I couldn't process that command." };
     } catch (error) {
         console.error("Advisor Error", error);
@@ -1046,7 +1125,7 @@ export const suggestClusteringSetup = async (
     datasetSummary: string,
     numericColumns: string[]
 ): Promise<{ x: string, y: string, k: number, reasoning: string }> => {
-    if (!apiKey) return { x: numericColumns[0], y: numericColumns[1], k: 3, reasoning: "Mock suggestion" };
+    if (!isGeminiAvailable()) return { x: numericColumns[0], y: numericColumns[1], k: 3, reasoning: "Mock suggestion" };
 
     const prompt = `
         Role: Unsupervised Learning Expert
@@ -1067,12 +1146,10 @@ export const suggestClusteringSetup = async (
     `;
 
     try {
-        const response = await ai.models.generateContent({
-            model: MODEL_NAME,
-            contents: prompt,
-            config: { responseMimeType: "application/json" }
+        const responseText = await callGemini(prompt, {
+          responseMimeType: "application/json"
         });
-        if (response.text) return JSON.parse(response.text);
+        if (responseText) return JSON.parse(responseText);
         throw new Error("Empty");
     } catch (e) {
         return { x: numericColumns[0], y: numericColumns[1], k: 3, reasoning: "Defaulting due to error" };
@@ -1084,7 +1161,7 @@ export const suggestForecastingSetup = async (
     dateColumns: string[],
     numericColumns: string[]
 ): Promise<{ dateCol: string, valueCol: string, reasoning: string }> => {
-    if (!apiKey) return { dateCol: dateColumns[0], valueCol: numericColumns[0], reasoning: "Mock suggestion" };
+    if (!isGeminiAvailable()) return { dateCol: dateColumns[0], valueCol: numericColumns[0], reasoning: "Mock suggestion" };
 
     const prompt = `
         Role: Time Series Expert
@@ -1105,12 +1182,10 @@ export const suggestForecastingSetup = async (
     `;
 
     try {
-        const response = await ai.models.generateContent({
-            model: MODEL_NAME,
-            contents: prompt,
-            config: { responseMimeType: "application/json" }
+        const responseText = await callGemini(prompt, {
+          responseMimeType: "application/json"
         });
-        if (response.text) return JSON.parse(response.text);
+        if (responseText) return JSON.parse(responseText);
         throw new Error("Empty");
     } catch (e) {
         return { dateCol: dateColumns[0], valueCol: numericColumns[0], reasoning: "Defaulting due to error" };
@@ -1121,31 +1196,79 @@ export const explainStatistic = async (
     type: 'regression' | 'clustering' | 'correlation' | 'forecast',
     dataContext: any
 ): Promise<string> => {
-    if (!apiKey) return "AI Explanation: This statistical model shows significant trends based on the input variables.";
+    if (!isGeminiAvailable()) {
+        // Return type-specific fallback messages
+        if (type === 'correlation') {
+            return "This correlation heatmap shows relationships between variables. Blue squares indicate positive correlations, red indicates negative correlations. Values closer to 1 or -1 show stronger relationships.";
+        } else if (type === 'clustering') {
+            return "This clustering analysis groups similar data points together. Each cluster represents a distinct segment with similar characteristics.";
+        } else if (type === 'regression') {
+            return "This regression model predicts one variable based on others. R-Squared shows how well the model fits the data.";
+        } else {
+            return "This forecast predicts future values based on historical trends.";
+        }
+    }
+
+    let typeSpecificGuidance = '';
+    if (type === 'correlation') {
+        typeSpecificGuidance = `
+        IMPORTANT: This is a CORRELATION HEATMAP analysis, NOT clustering.
+        Focus on:
+        - Correlation coefficients (ranging from -1 to +1)
+        - Strong positive correlations (close to +1, shown in blue)
+        - Strong negative correlations (close to -1, shown in red)
+        - Weak correlations (close to 0, shown in white/light colors)
+        - What relationships exist between variables
+        - Which variables move together or in opposite directions
+        `;
+    } else if (type === 'clustering') {
+        typeSpecificGuidance = `
+        This is a CLUSTERING (K-Means) analysis.
+        Focus on:
+        - Number of clusters identified
+        - Cluster centers and characteristics
+        - How data points are grouped
+        - Similarities within clusters
+        `;
+    } else if (type === 'regression') {
+        typeSpecificGuidance = `
+        This is a REGRESSION analysis.
+        Focus on:
+        - R-Squared value (model fit)
+        - Mean Absolute Error (prediction accuracy)
+        - How well the model predicts the target variable
+        `;
+    } else {
+        typeSpecificGuidance = `
+        This is a FORECASTING (Time-Series) analysis.
+        Focus on:
+        - Future predictions
+        - Trends and patterns
+        - Time-based patterns
+        `;
+    }
 
     const prompt = `
         Role: Expert Data Scientist
-        Task: Explain a specific statistical result to a business user. Keep it simple but accurate.
+        Task: Explain a ${type} analysis result to a business user. Keep it simple but accurate.
         
         Analysis Type: ${type}
+        ${typeSpecificGuidance}
         
         Result Data:
         ${JSON.stringify(dataContext).substring(0, 1000)}
 
         Explanation Requirements:
-        1. What does this result mean? (e.g., "Advertising Spend strongly predicts Revenue")
-        2. How confident are we? (Mention R-Squared, Correlation coefficient, or Cluster tightness if available)
+        1. What does this ${type} result mean? (Be specific to ${type} analysis)
+        2. Key metrics or findings from the data
         3. One actionable takeaway.
 
-        Output: A single paragraph (max 60 words).
+        Output: A single paragraph (max 60 words). Make sure you explain ${type} analysis, NOT other analysis types.
     `;
 
     try {
-        const response = await ai.models.generateContent({
-            model: MODEL_NAME,
-            contents: prompt
-        });
-        return response.text || "Analysis unavailable.";
+        const responseText = await callGemini(prompt);
+        return responseText || "Analysis unavailable.";
     } catch (error) {
         return "Could not generate explanation.";
     }

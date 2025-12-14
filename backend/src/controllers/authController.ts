@@ -54,7 +54,19 @@ export async function register(req: Request, res: Response): Promise<void> {
     }
 
     console.error('Registration error:', error);
-    res.status(500).json({ error: 'Registration failed' });
+    
+    // Check for database connection errors
+    if (error instanceof Error && (error.message.includes('connect') || error.message.includes('ECONNREFUSED'))) {
+      res.status(503).json({ 
+        error: 'Database connection failed. Please ensure PostgreSQL is running and DATABASE_URL is set correctly.' 
+      });
+      return;
+    }
+
+    res.status(500).json({ 
+      error: 'Registration failed',
+      message: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : 'Unknown error') : undefined
+    });
   }
 }
 
@@ -104,7 +116,19 @@ export async function login(req: Request, res: Response): Promise<void> {
     }
 
     console.error('Login error:', error);
-    res.status(500).json({ error: 'Login failed' });
+    
+    // Check for database connection errors
+    if (error instanceof Error && (error.message.includes('connect') || error.message.includes('ECONNREFUSED'))) {
+      res.status(503).json({ 
+        error: 'Database connection failed. Please ensure PostgreSQL is running and DATABASE_URL is set correctly.' 
+      });
+      return;
+    }
+
+    res.status(500).json({ 
+      error: 'Login failed',
+      message: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : 'Unknown error') : undefined
+    });
   }
 }
 

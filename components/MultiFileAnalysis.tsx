@@ -26,35 +26,87 @@ function AIInfoIcon({ type, context }: { type: 'regression' | 'clustering' | 'co
     const [isOpen, setIsOpen] = useState(false);
     const [explanation, setExplanation] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
+    
+    // Create a unique key based on type and context to identify this instance
+    const contextKey = useMemo(() => {
+        if (!context) return `${type}-empty`;
+        // Create a unique identifier from context
+        const contextStr = JSON.stringify(context);
+        return `${type}-${contextStr.substring(0, 50)}`;
+    }, [type, context]);
+    
+    // Reset explanation when type or context changes
+    useEffect(() => {
+        setExplanation(null);
+        setIsOpen(false);
+        setLoading(false);
+    }, [contextKey]);
 
     const handleClick = async () => {
         setIsOpen(!isOpen);
-        if (!explanation && !loading) {
+        // Always regenerate if opening and no explanation exists for this specific context
+        if (isOpen === false && !explanation && !loading) {
             setLoading(true);
-            const text = await explainStatistic(type, context);
-            setExplanation(text);
-            setLoading(false);
+            try {
+                const text = await explainStatistic(type, context);
+                setExplanation(text);
+            } catch (error) {
+                console.error('Error generating explanation:', error);
+                setExplanation('Failed to generate explanation. Please try again.');
+            } finally {
+                setLoading(false);
+            }
         }
     };
 
     return (
         <div className="relative inline-block ml-2">
-            <button onClick={handleClick} className="text-slate-400 hover:text-indigo-600 transition-colors">
+            <button 
+                onClick={handleClick} 
+                className="text-slate-400 hover:text-indigo-600 transition-colors p-1 rounded hover:bg-indigo-50"
+                aria-label="Show AI explanation"
+            >
                 <Info size={16} />
             </button>
             {isOpen && (
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 bg-white text-slate-700 text-xs p-4 rounded-xl shadow-xl border border-slate-200 z-50 animate-in zoom-in-95">
-                    <div className="flex justify-between items-start mb-2">
-                        <h4 className="font-bold flex items-center gap-1 text-indigo-700"><Sparkles size={12}/> AI Insight</h4>
-                        <button onClick={() => setIsOpen(false)}><X size={12}/></button>
+                <>
+                    {/* Backdrop to close on outside click */}
+                    <div 
+                        className="fixed inset-0 z-[9998]" 
+                        onClick={() => setIsOpen(false)}
+                    />
+                    {/* Popup - positioned below */}
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-72 bg-white text-slate-700 text-xs rounded-xl shadow-2xl border border-slate-200 z-[9999] animate-in zoom-in-95 fade-in">
+                        {/* Header - fixed */}
+                        <div className="flex justify-between items-start p-4 pb-3 border-b border-slate-100">
+                            <h4 className="font-bold flex items-center gap-1 text-indigo-700">
+                                <Sparkles size={12}/> AI Insight
+                            </h4>
+                            <button 
+                                onClick={() => setIsOpen(false)}
+                                className="text-slate-400 hover:text-slate-600 transition-colors p-0.5 rounded hover:bg-slate-100"
+                                aria-label="Close"
+                            >
+                                <X size={12}/>
+                            </button>
+                        </div>
+                        {/* Content - scrollable */}
+                        <div className="p-4 max-h-64 overflow-y-auto">
+                            {loading ? (
+                                <div className="flex items-center gap-2 text-slate-400">
+                                    <Loader2 className="animate-spin" size={12}/> Analyzing results...
+                                </div>
+                            ) : (
+                                <p className="leading-relaxed text-sm">{explanation || 'Click to load AI explanation'}</p>
+                            )}
+                        </div>
+                        {/* Arrow pointer pointing up */}
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-px">
+                            <div className="border-8 border-transparent border-b-white"></div>
+                            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 border-8 border-transparent border-b-slate-200 mb-px"></div>
+                        </div>
                     </div>
-                    {loading ? (
-                        <div className="flex items-center gap-2 text-slate-400"><Loader2 className="animate-spin" size={12}/> Analyzing results...</div>
-                    ) : (
-                        <p className="leading-relaxed">{explanation}</p>
-                    )}
-                    <div className="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-white drop-shadow-sm"></div>
-                </div>
+                </>
             )}
         </div>
     );
