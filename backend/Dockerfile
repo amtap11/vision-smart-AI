@@ -1,7 +1,7 @@
 # ============================================
 # Stage 1: Builder - Build the TypeScript application
 # ============================================
-FROM node:20-alpine AS builder
+FROM node:25-alpine AS builder
 
 # Set working directory
 WORKDIR /app
@@ -21,7 +21,7 @@ RUN npm run build
 # ============================================
 # Stage 2: Production - Create minimal runtime image
 # ============================================
-FROM node:20-alpine AS production
+FROM node:25-alpine AS production
 
 # Install dumb-init to handle signals properly
 RUN apk add --no-cache dumb-init
