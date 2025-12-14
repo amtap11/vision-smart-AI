@@ -79,6 +79,16 @@ export async function analyzeData(req: AuthRequest, res: Response): Promise<void
       fullPrompt = `Context: ${JSON.stringify(context, null, 2)}\n\nPrompt: ${prompt}`;
     }
 
+    // Build config object from responseMimeType and responseSchema
+    const config: any = {};
+    if (responseMimeType) {
+      config.responseMimeType = responseMimeType;
+    }
+    if (responseSchema) {
+      // Convert string-based schema to Type enum schema if needed
+      config.responseSchema = convertSchemaToTypeEnum(responseSchema);
+    }
+
     // Log AI operation request
     await logDataAccess(
       AuditEventType.DATA_READ,
