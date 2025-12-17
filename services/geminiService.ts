@@ -112,42 +112,76 @@ async function callGemini(
   // Try backend API first if user is authenticated
   if (shouldUseBackendAPI()) {
     try {
-      console.log('Calling backend Gemini API...', { 
+      console.log('🤖 Calling backend Gemini API...', { 
         hasSchema: !!jsonSchema, 
         hasMimeType: !!options?.responseMimeType,
-        model 
+        model,
+        promptLength: prompt.length,
+        hasToken: !!apiClient.getToken()
       });
       const response = await apiClient.analyzeWithGemini(prompt, undefined, {
         responseMimeType: options?.responseMimeType,
         responseSchema: jsonSchema,
         model
       });
-      console.log('Backend Gemini API success');
+      console.log('✅ Backend Gemini API success, response length:', response.result?.length || 0);
       return response.result;
     } catch (error: any) {
-      console.error('Backend Gemini API failed:', error);
+      console.error('❌ Backend Gemini API failed:', error);
       const errorMessage = error?.message || 'Unknown error';
-      throw new Error(`Failed to call Gemini API through backend: ${errorMessage}. Please ensure backend is running and GEMINI_API_KEY is set in backend/.env`);
+      
+      // Provide detailed error diagnostics
+      let diagnosticMessage = `Failed to call Gemini API through backend: ${errorMessage}\n\n`;
+      diagnosticMessage += `Diagnostics:\n`;
+      diagnosticMessage += `- Backend URL: ${import.meta.env.VITE_API_URL || 'http://localhost:3001'}\n`;
+      diagnosticMessage += `- Has Auth Token: ${!!apiClient.getToken()}\n`;
+      diagnosticMessage += `- Error Type: ${error?.constructor?.name || 'Unknown'}\n`;
+      
+      if (errorMessage.includes('503') || errorMessage.includes('not configured')) {
+        diagnosticMessage += `\n⚠️  The backend API key is missing or invalid.\n`;
+        diagnosticMessage += `Please check that GEMINI_API_KEY is set in backend/.env\n`;
+      } else if (errorMessage.includes('Network error') || errorMessage.includes('connect')) {
+        diagnosticMessage += `\n⚠️  Cannot connect to backend server.\n`;
+        diagnosticMessage += `Please ensure the backend is running on port 3001\n`;
+      } else if (errorMessage.includes('401') || errorMessage.includes('Unauthorized')) {
+        diagnosticMessage += `\n⚠️  Authentication failed. Please log in again.\n`;
+      } else if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {
+        diagnosticMessage += `\n⚠️  Rate limit exceeded. Please wait a moment and try again.\n`;
+      }
+      
+      throw new Error(diagnosticMessage);
     }
   }
 
   // Fallback: direct call (requires frontend API key)
+  console.log('⚠️  Using direct frontend API call (backend not available or user not authenticated)');
   const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY || '';
   if (!apiKey) {
-    throw new Error('Gemini API key not configured. Please set GEMINI_API_KEY in backend/.env and ensure you are logged in, or set it in .env.local for frontend direct calls.');
+    const errorMsg = 'Gemini API key not configured.\n\n' +
+      'Options:\n' +
+      '1. Set GEMINI_API_KEY in backend/.env and ensure you are logged in (recommended)\n' +
+      '2. Set GEMINI_API_KEY in .env.local for frontend direct calls\n' +
+      '3. Set VITE_GEMINI_API_KEY in .env.local for Vite environment';
+    throw new Error(errorMsg);
   }
 
-  const ai = new GoogleGenAI({ apiKey });
-  const response = await ai.models.generateContent({
-    model,
-    contents: prompt,
-    config: {
-      responseMimeType: options?.responseMimeType,
-      responseSchema: options?.responseSchema
-    }
-  });
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+    const response = await ai.models.generateContent({
+      model,
+      contents: prompt,
+      config: {
+        responseMimeType: options?.responseMimeType,
+        responseSchema: options?.responseSchema
+      }
+    });
 
-  return response.text || '';
+    console.log('✅ Direct Gemini API call success');
+    return response.text || '';
+  } catch (error: any) {
+    console.error('❌ Direct Gemini API call failed:', error);
+    throw new Error(`Direct Gemini API call failed: ${error?.message || 'Unknown error'}. Please check your API key.`);
+  }
 }
 
 // ... (Previous functions: generateIntrospectionQuestions, generateMoreIntrospectionQuestions, generateGoalSuggestions, generateGoalRoadmap, generateRecommendationAnalysis, generateQuestionAnalysis, generateChartExplanation, generateSingleChartConfig, generateFinalReport, generateChartContextForReport, evaluateReportQuality, analyzeCrossFilePatterns, suggestTransformations, suggestMergeStrategy, suggestStatisticalAnalyses, getModelAdvisorResponse, suggestClusteringSetup, suggestForecastingSetup, explainStatistic, getMockQuestions, getMockRoadmap) ...
@@ -180,6 +214,7 @@ export const generateIntrospectionQuestions = async (
   `;
 
   try {
+    console.log('Generating introspection questions...', { columnCount: columns.length, rowCount });
     const responseText = await callGemini(prompt, {
       responseMimeType: "application/json",
       responseSchema: {
@@ -197,14 +232,24 @@ export const generateIntrospectionQuestions = async (
       }
     });
 
+    console.log('Received response from Gemini:', responseText?.substring(0, 200));
+
     if (responseText) {
-      return JSON.parse(responseText) as AnalyticalQuestion[];
+      const parsed = JSON.parse(responseText);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        console.log(`Successfully generated ${parsed.length} questions`);
+        return parsed as AnalyticalQuestion[];
+      } else {
+        console.warn('Response is not a valid array:', parsed);
+        throw new Error("Invalid response format from AI");
+      }
     }
     throw new Error("Empty response from AI");
   } catch (error: any) {
-    console.error("Gemini API Error:", error);
+    console.error("Gemini API Error in generateIntrospectionQuestions:", error);
     console.error("Error details:", error?.message, error?.stack);
     // Return mock data on error so the UI doesn't hang
+    console.warn("Returning mock questions due to error");
     return getMockQuestions();
   }
 };
@@ -347,12 +392,14 @@ export const generateGoalRoadmap = async (
     4. Design a "Live Dashboard" configuration. Suggest 4-6 specific charts or KPIs.
     
     CRITICAL CHART CONFIGURATION RULES:
-    - 'dataKey' MUST be an EXACT column name from the list above, OR 'count'.
-    - If 'aggregation' is 'sum' or 'average', 'dataKey' MUST be a 'number' type column. Do NOT sum strings.
-    - If you want to count records (e.g. number of visits), use 'count' as 'dataKey' and 'count' as aggregation.
+    - 'dataKey' MUST be an EXACT column name from the list above (case-sensitive), OR use 'count' (lowercase) for counting records.
+    - NEVER use 'COUNT' (uppercase) as dataKey. Use 'count' (lowercase) if you want to count records.
+    - If 'aggregation' is 'sum' or 'average', 'dataKey' MUST be an EXACT column name that is a 'number' type. Do NOT sum strings.
+    - If you want to count records (e.g. number of visits, appointments), use 'count' (lowercase) as 'dataKey' and 'count' as aggregation.
     - 'xAxisKey' MUST be an EXACT column name (usually string or date) for grouping.
     - Use 'map' ONLY if the data contains region/city/location columns.
     - Use 'scatter' ONLY if you have two 'number' columns.
+    - For KPI widgets showing totals, use 'count' as dataKey with 'count' aggregation to show total number of records.
   `;
 
   try {
@@ -409,11 +456,32 @@ export const generateGoalRoadmap = async (
     });
 
     if (responseText) {
-      return JSON.parse(responseText) as GoalAnalysisResult;
+      const result = JSON.parse(responseText) as GoalAnalysisResult;
+      
+      // Validate and normalize dashboard config
+      if (result.dashboardConfig) {
+        result.dashboardConfig = result.dashboardConfig.map(config => {
+          // Normalize "COUNT" to "count" for dataKey
+          if (config.dataKey?.toUpperCase() === 'COUNT') {
+            console.warn(`Normalizing dataKey from "COUNT" to "count" for chart: ${config.title}`);
+            config.dataKey = 'count';
+          }
+          // Ensure aggregation matches dataKey
+          if (config.dataKey === 'count' && config.aggregation !== 'count') {
+            console.warn(`Fixing aggregation to "count" for count-based chart: ${config.title}`);
+            config.aggregation = 'count';
+          }
+          return config;
+        });
+      }
+      
+      console.log('Generated dashboard config:', result.dashboardConfig?.length || 0, 'charts');
+      return result;
     }
     throw new Error("Empty response from AI");
   } catch (error) {
-    console.error("Gemini API Error:", error);
+    console.error("Gemini API Error in generateGoalRoadmap:", error);
+    console.error("Error details:", error?.message, error?.stack);
     return getMockRoadmap(goal);
   }
 };
@@ -556,9 +624,10 @@ export const generateSingleChartConfig = async (
 
     Task: Generate a single JSON ChartConfig object that best visualizes the user's request.
     - Type must be one of: 'bar', 'line', 'pie', 'kpi', 'scatter', 'boxplot', 'map'.
-    - 'dataKey' MUST be an EXACT column name from the list provided, or 'count' for counting records.
-    - 'xAxisKey' MUST be an EXACT column name from the list provided.
-    - Do NOT invent column names.
+    - 'dataKey' MUST be an EXACT column name from the list provided (case-sensitive), or 'count' (lowercase) for counting records.
+    - NEVER use 'COUNT' (uppercase) as dataKey. Always use 'count' (lowercase) if counting records.
+    - 'xAxisKey' MUST be an EXACT column name from the list provided (case-sensitive).
+    - Do NOT invent column names. Use only the exact names provided.
   `;
 
   try {
@@ -579,11 +648,25 @@ export const generateSingleChartConfig = async (
     });
 
     if (responseText) {
-      return JSON.parse(responseText) as ChartConfig;
+      const config = JSON.parse(responseText) as ChartConfig;
+      
+      // Validate and normalize config
+      if (config.dataKey?.toUpperCase() === 'COUNT') {
+        console.warn(`Normalizing dataKey from "COUNT" to "count" for chart: ${config.title}`);
+        config.dataKey = 'count';
+      }
+      if (config.dataKey === 'count' && config.aggregation !== 'count') {
+        console.warn(`Fixing aggregation to "count" for count-based chart: ${config.title}`);
+        config.aggregation = 'count';
+      }
+      
+      console.log('Generated chart config:', config.title, config.type, config.dataKey, config.aggregation);
+      return config;
     }
     throw new Error("Empty response from AI");
   } catch (error) {
      console.error("Gemini Single Chart Error:", error);
+     console.error("Error details:", error?.message, error?.stack);
      throw error;
   }
 };

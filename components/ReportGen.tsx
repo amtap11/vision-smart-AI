@@ -525,12 +525,7 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
     };
   }, []);
 
-  // ... (Effects and Helper functions like handleGenerate, saveSelection remain unchanged) ...
-  // Re-implementing effects and helpers briefly for context
-  useEffect(() => { if (externalLoadItem) handleLoadHistory(externalLoadItem); }, [externalLoadItem]);
-  useEffect(() => { if (step === 3 && editorRef.current && editorRef.current.innerHTML !== htmlContent) editorRef.current.innerHTML = htmlContent; }, [step, htmlContent]);
-  useEffect(() => { if (step === 3) setHasDownloaded(false); }, [step]);
-
+  // Helper functions - defined before useEffects that use them
   const saveSelection = () => {
     const selection = window.getSelection();
     if (selection && selection.rangeCount > 0) {
@@ -550,18 +545,48 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
   const syncContent = () => { if (editorRef.current) setHtmlContent(editorRef.current.innerHTML); };
   const parseMarkdown = (md: string) => md.replace(/^# (.*$)/gim, '<h1 class="text-3xl font-bold mb-4 text-slate-900 border-b-2 border-slate-100 pb-2 break-after-avoid">$1</h1>').replace(/^## (.*$)/gim, '<h2 class="text-2xl font-bold mt-8 mb-4 text-slate-800 break-after-avoid">$1</h2>').replace(/^### (.*$)/gim, '<h3 class="text-xl font-bold mt-6 mb-3 text-slate-800 break-after-avoid">$1</h3>').replace(/\*\*(.*)\*\*/gim, '<strong>$1</strong>').replace(/\*(.*)\*/gim, '<em>$1</em>').replace(/^\- (.*$)/gim, '<li class="ml-4 mb-1 text-slate-700 list-disc">$1</li>').replace(/\n/gim, '<br />');
 
+  const handleLoadHistory = (item: ReportHistoryItem) => { 
+    setHtmlContent(item.htmlContent); 
+    setReportTitle(item.title); 
+    setStep(3); 
+  };
+
   const handleGenerate = async () => {
+    if (items.length === 0) {
+      alert('Please add items to your report before generating.');
+      return;
+    }
     setIsGenerating(true);
     try {
+      console.log('Generating report with', items.length, 'items');
       const rawText = await generateFinalReport(items, context);
+      console.log('Report generated, length:', rawText.length);
       const html = parseMarkdown(rawText);
       setHtmlContent(html);
       setStep(3);
       onSaveToHistory({ id: Date.now().toString(), date: new Date().toLocaleString(), title: reportTitle, htmlContent: html, visuals: items.filter(i => i.type === 'chart') });
-    } catch (error) { console.error(error); } finally { setIsGenerating(false); }
+    } catch (error) { 
+      console.error('Error generating report:', error);
+      alert('Failed to generate report. Please check console for details.');
+    } finally { 
+      setIsGenerating(false); 
+    }
   };
 
-  const handleLoadHistory = (item: ReportHistoryItem) => { setHtmlContent(item.htmlContent); setReportTitle(item.title); setStep(3); };
+  // Effects - after function definitions
+  useEffect(() => { 
+    if (externalLoadItem) handleLoadHistory(externalLoadItem); 
+  }, [externalLoadItem]); // eslint-disable-line react-hooks/exhaustive-deps
+  
+  useEffect(() => { 
+    if (step === 3 && editorRef.current && editorRef.current.innerHTML !== htmlContent) {
+      editorRef.current.innerHTML = htmlContent;
+    }
+  }, [step, htmlContent]);
+  
+  useEffect(() => { 
+    if (step === 3) setHasDownloaded(false); 
+  }, [step]);
   const execCmd = (command: string, value: string | undefined = undefined) => { document.execCommand(command, false, value); if (editorRef.current) editorRef.current.focus(); syncContent(); };
   
   const insertHtmlAtCursorOrEnd = (html: string) => {
@@ -729,7 +754,27 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
                 <h2 className="text-3xl font-bold text-slate-800 mb-2">Report Builder</h2>
                 <p className="text-slate-500">Review your collected insights before generation.</p>
             </div>
-            <button onClick={() => setStep('history')} className="absolute right-6 top-6 flex items-center gap-2 text-slate-500 hover:text-indigo-600"><History size={18} /> History</button>
+            <div className="flex items-center gap-2 absolute right-6 top-6">
+              {onReset && items.length > 0 && (
+                <button 
+                  onClick={() => {
+                    if (confirm('Are you sure you want to reset the report? This will clear all items.')) {
+                      onReset();
+                      setStep(1);
+                      setHtmlContent('');
+                      setReportTitle('Strategic Business Report');
+                      setContext({ audience: 'Executive Board', tone: 'Strategic and Data-Driven', notes: '' });
+                    }
+                  }}
+                  className="flex items-center gap-2 text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-2 rounded-lg transition-colors"
+                  title="Reset Report"
+                >
+                  <XCircle size={18} />
+                  <span className="hidden sm:inline">Reset</span>
+                </button>
+              )}
+              <button onClick={() => setStep('history')} className="flex items-center gap-2 text-slate-500 hover:text-indigo-600"><History size={18} /> History</button>
+            </div>
         </div>
         {items.length === 0 ? (
           <div className="text-center py-20 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50"><p className="text-slate-400">Your report cart is empty. Go back and add insights!</p></div>
@@ -748,7 +793,11 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
                        </div>
                        <div>
                          <div className="flex items-center gap-2"><h4 className="font-semibold text-slate-800">{item.title}</h4>{isFiltered && <span className="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded border border-indigo-100 flex items-center gap-1"><Filter size={8} /> Filtered</span>}</div>
-                         <p className="text-xs text-slate-500 capitalize">{item.type} • Added {item.timestamp.toLocaleTimeString()}</p>
+                         <p className="text-xs text-slate-500 capitalize">{item.type} • Added {
+                           item.timestamp instanceof Date 
+                             ? item.timestamp.toLocaleTimeString() 
+                             : new Date(item.timestamp).toLocaleTimeString()
+                         }</p>
                        </div>
                     </div>
                     <button onClick={() => onRemoveItem(item.id)} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={18} /></button>
@@ -788,6 +837,24 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
           <div className="flex items-center gap-4">
              <button onClick={() => setStep(1)} className="text-slate-400 hover:text-slate-700"><ChevronRight size={20} className="rotate-180"/></button>
              <div><h2 className="text-lg font-bold text-slate-800">{reportTitle}</h2><p className="text-xs text-slate-500">Editable Mode</p></div>
+             {onReset && (
+               <button 
+                 onClick={() => {
+                   if (confirm('Are you sure you want to reset the report? This will clear all items and content.')) {
+                     onReset();
+                     setStep(1);
+                     setHtmlContent('');
+                     setReportTitle('Strategic Business Report');
+                     setContext({ audience: 'Executive Board', tone: 'Strategic and Data-Driven', notes: '' });
+                   }
+                 }}
+                 className="flex items-center gap-2 text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-2 rounded-lg transition-colors ml-4"
+                 title="Reset Report"
+               >
+                 <XCircle size={18} />
+                 <span className="text-sm font-medium">Reset</span>
+               </button>
+             )}
           </div>
           <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-lg border border-slate-200">
              <ToolbarButton onClick={() => execCmd('bold')} icon={<Bold size={16}/>} />

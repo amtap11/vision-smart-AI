@@ -3,10 +3,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   LayoutDashboard, FileText, ClipboardList, Brain, Layers, LogOut, 
   FolderOpen, Database, Wand2, Network, HardDrive, Plus, MoreVertical, Trash2, Download,
-  History, FileEdit, RotateCcw, Download as DownloadIcon
+  History, FileEdit, RotateCcw, Download as DownloadIcon, AlertTriangle
 } from 'lucide-react';
 import { AppStage, User, Dataset } from '../types';
 import { exportToCSV } from '../services/dataService';
+import AIDiagnostics from './AIDiagnostics';
 
 interface LayoutProps {
   currentStage: AppStage;
@@ -51,11 +52,13 @@ const Layout: React.FC<LayoutProps> = ({
   reportHistory = [],
   reportDraft = null,
   onLoadHistoryItem,
-  onLoadDraft
+  onLoadDraft,
+  onLoadLastSession
 }) => {
   const [showDrive, setShowDrive] = useState(true);
   const [showHistoryMenu, setShowHistoryMenu] = useState(false);
   const [showDraftMenu, setShowDraftMenu] = useState(false);
+  const [showAIDiagnostics, setShowAIDiagnostics] = useState(false);
   const historyMenuRef = useRef<HTMLDivElement>(null);
   const draftMenuRef = useRef<HTMLDivElement>(null);
   
@@ -295,10 +298,45 @@ const Layout: React.FC<LayoutProps> = ({
                       {showDraftMenu && (
                         <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-in fade-in zoom-in-95">
                           <div className="p-3 bg-slate-50 border-b border-slate-100">
-                            <h3 className="font-bold text-slate-800 text-sm">Draft Reports</h3>
+                            <h3 className="font-bold text-slate-800 text-sm">Draft & Session</h3>
                             <p className="text-xs text-slate-500">Continue working on saved drafts</p>
                           </div>
                           <div className="max-h-96 overflow-y-auto">
+                            {/* Load Last Session Button */}
+                            {(() => {
+                              try {
+                                const sessionDraft = localStorage.getItem('vision_session_draft');
+                                if (sessionDraft) {
+                                  const data = JSON.parse(sessionDraft);
+                                  return (
+                                    <button
+                                      onClick={() => {
+                                        if (onLoadLastSession) {
+                                          onLoadLastSession();
+                                          setShowDraftMenu(false);
+                                        }
+                                      }}
+                                      className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 flex items-start gap-3 transition-colors border-b border-slate-100"
+                                    >
+                                      <HardDrive size={18} className="text-indigo-600 mt-0.5 flex-shrink-0" />
+                                      <div className="flex-1 min-w-0">
+                                        <div className="font-medium">Load Last Session</div>
+                                        <div className="text-xs text-slate-500 mt-1">
+                                          {data.datasets?.length || 0} datasets, {data.reportItems?.length || 0} report items
+                                        </div>
+                                        <div className="text-xs text-indigo-600 mt-1 font-medium">
+                                          Saved {data.savedAt ? new Date(data.savedAt).toLocaleString() : 'recently'}
+                                        </div>
+                                      </div>
+                                    </button>
+                                  );
+                                }
+                              } catch (e) {
+                                return null;
+                              }
+                            })()}
+                            
+                            {/* Report Draft */}
                             {reportDraft && reportDraft.items && reportDraft.items.length > 0 ? (
                               <button
                                 onClick={() => {
@@ -360,8 +398,21 @@ const Layout: React.FC<LayoutProps> = ({
                     </span>
                 )}
               </button>
+              
+              <button
+                onClick={() => setShowAIDiagnostics(true)}
+                className="px-3 py-2 rounded-xl transition-all flex items-center gap-2 font-medium text-sm border bg-white border-amber-200 text-amber-600 hover:bg-amber-50 hover:border-amber-300"
+                title="AI Diagnostics"
+              >
+                <AlertTriangle size={18} />
+                <span className="hidden sm:inline">AI Status</span>
+              </button>
            </div>
         </header>
+        
+        {showAIDiagnostics && (
+          <AIDiagnostics onClose={() => setShowAIDiagnostics(false)} />
+        )}
 
         {/* Dynamic Content */}
         <main className="flex-1 overflow-y-auto bg-slate-50 p-6 relative">

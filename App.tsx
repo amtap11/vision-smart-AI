@@ -1,6 +1,7 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Layout from './components/Layout';
+import UploadOverlay from './components/UploadOverlay';
 import DataStudio from './components/DataStudio';
 import SmartAnalysisWrapper from './components/SmartAnalysisWrapper';
 import MultiFileAnalysis from './components/MultiFileAnalysis'; // We will reuse the analytics part here for Deep Dive
@@ -44,6 +45,14 @@ const App: React.FC = () => {
   const [selectedGoal, setSelectedGoal] = useState<string>('');
   const [dashboardConfig, setDashboardConfig] = useState<ChartConfig[]>([]);
 
+  // Helper function to normalize timestamps in report items
+  const normalizeReportItems = (items: ReportItem[]): ReportItem[] => {
+    return items.map(item => ({
+      ...item,
+      timestamp: item.timestamp instanceof Date ? item.timestamp : new Date(item.timestamp)
+    }));
+  };
+
   // Load user and restore all drafts
   useEffect(() => {
     const savedUser = localStorage.getItem('vision_user');
@@ -57,6 +66,10 @@ const App: React.FC = () => {
       if (savedReportDraft) {
         try {
           const draft = JSON.parse(savedReportDraft);
+          // Convert timestamp strings back to Date objects
+          if (draft.items && draft.items.length > 0) {
+            draft.items = normalizeReportItems(draft.items);
+          }
           setReportDraft(draft);
           if (draft.items && draft.items.length > 0) {
             setReportItems(draft.items);
@@ -137,16 +150,40 @@ const App: React.FC = () => {
     }
   }, [reportHistory, user]);
   
-  // Auto-save datasets
+  // Auto-save datasets (with quota handling)
   useEffect(() => {
     if (user && datasets.length > 0) {
       try {
-        localStorage.setItem('vision_datasets_full', JSON.stringify(datasets));
+        const jsonString = JSON.stringify(datasets);
+        const sizeMB = new Blob([jsonString]).size / (1024 * 1024);
+        
+        if (sizeMB > 4) {
+          console.warn(`Datasets too large (${sizeMB.toFixed(2)}MB) to save. Consider reducing data size.`);
+          // Still try to save, but it might fail
+        }
+        
+        localStorage.setItem('vision_datasets_full', jsonString);
         if (activeDatasetId) {
           localStorage.setItem('vision_active_dataset_id', activeDatasetId);
         }
-      } catch (e) {
-        console.error('Error saving datasets (may be too large):', e);
+      } catch (e: any) {
+        if (e.name === 'QuotaExceededError' || e.message?.includes('quota')) {
+          console.warn('localStorage quota exceeded. Datasets are too large to save. Consider removing some datasets.');
+          // Try to save at least the active dataset
+          if (activeDatasetId) {
+            const activeDataset = datasets.find(ds => ds.id === activeDatasetId);
+            if (activeDataset) {
+              try {
+                localStorage.setItem('vision_active_dataset', JSON.stringify(activeDataset));
+                localStorage.setItem('vision_active_dataset_id', activeDatasetId);
+              } catch (e2) {
+                console.error('Could not save even active dataset:', e2);
+              }
+            }
+          }
+        } else {
+          console.error('Error saving datasets:', e);
+        }
       }
     }
   }, [datasets, activeDatasetId, user]);
@@ -170,6 +207,281 @@ const App: React.FC = () => {
     }
   }, [introQuestions, introAnswers, goalSuggestions, goalAnalysisResult, goalRecAnalyses, selectedGoal, dashboardConfig, smartStage, user]);
 
+  // Helper function to safely save to localStorage with quota handling
+  const safeLocalStorageSet = (key: string, value: any, maxSizeMB: number = 4): boolean => {
+    try {
+      const jsonString = JSON.stringify(value);
+      const sizeMB = new Blob([jsonString]).size / (1024 * 1024);
+      
+      if (sizeMB > maxSizeMB) {
+        console.warn(`Data too large (${sizeMB.toFixed(2)}MB) to save to localStorage. Key: ${key}`);
+        return false;
+      }
+      
+      localStorage.setItem(key, jsonString);
+      return true;
+    } catch (error: any) {
+      if (error.name === 'QuotaExceededError' || error.message?.includes('quota')) {
+        console.warn(`localStorage quota exceeded for key: ${key}. Clearing old data...`);
+        // Try to clear some old data and retry
+        try {
+          // Clear old session drafts and caches
+          const keysToRemove = ['vision_session_draft', 'vision_deep_dive_cache'];
+          keysToRemove.forEach(k => {
+            if (k !== key) localStorage.removeItem(k);
+          });
+          // Retry once
+          localStorage.setItem(key, JSON.stringify(value));
+          return true;
+        } catch (retryError) {
+          console.error('Failed to save after clearing cache:', retryError);
+          return false;
+        }
+      }
+      console.error('Error saving to localStorage:', error);
+      return false;
+    }
+  };
+
+  // Auto-save complete session draft (all data) - optimized to avoid quota issues
+  useEffect(() => {
+    if (user) {
+      // Only save dataset metadata (not full data - datasets are saved separately)
+      const datasetMetadata = datasets.map(ds => ({
+        id: ds.id,
+        name: ds.name,
+        rowCount: ds.data?.length || 0,
+        columnCount: ds.data?.[0] ? Object.keys(ds.data[0]).length : 0
+      }));
+      
+      const sessionDraft = {
+        datasetMetadata, // Only metadata, not full data
+        activeDatasetId,
+        reportItems: reportItems.map(item => ({
+          ...item,
+          // Remove large chart images from report items if present
+          chartImage: undefined
+        })),
+        reportHistory: reportHistory.map(h => ({
+          ...h,
+          items: h.items?.map(item => ({
+            ...item,
+            chartImage: undefined
+          }))
+        })),
+        reportDraft: reportDraft ? {
+          ...reportDraft,
+          items: reportDraft.items?.map(item => ({
+            ...item,
+            chartImage: undefined
+          }))
+        } : null,
+        smartAnalysisDraft: {
+          introQuestions,
+          introAnswers,
+          goalSuggestions,
+          goalAnalysisResult,
+          goalRecAnalyses,
+          selectedGoal,
+          dashboardConfig,
+          smartStage
+        },
+        // Don't include deepDiveCache here - it's saved separately
+        savedAt: new Date().toISOString()
+      };
+      
+      safeLocalStorageSet('vision_session_draft', sessionDraft);
+    }
+  }, [
+    user,
+    datasets,
+    activeDatasetId,
+    reportItems,
+    reportHistory,
+    reportDraft,
+    introQuestions,
+    introAnswers,
+    goalSuggestions,
+    goalAnalysisResult,
+    goalRecAnalyses,
+    selectedGoal,
+    dashboardConfig,
+    smartStage
+  ]);
+
+  // Save session draft on page unload
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (user) {
+        // Only save dataset metadata (not full data)
+        const datasetMetadata = datasets.map(ds => ({
+          id: ds.id,
+          name: ds.name,
+          rowCount: ds.data?.length || 0,
+          columnCount: ds.data?.[0] ? Object.keys(ds.data[0]).length : 0
+        }));
+        
+        const sessionDraft = {
+          datasetMetadata, // Only metadata, not full data
+          activeDatasetId,
+          reportItems: reportItems.map(item => ({
+            ...item,
+            chartImage: undefined // Remove large images
+          })),
+          reportHistory: reportHistory.map(h => ({
+            ...h,
+            items: h.items?.map(item => ({
+              ...item,
+              chartImage: undefined
+            }))
+          })),
+          reportDraft: reportDraft ? {
+            ...reportDraft,
+            items: reportDraft.items?.map(item => ({
+              ...item,
+              chartImage: undefined
+            }))
+          } : null,
+          smartAnalysisDraft: {
+            introQuestions,
+            introAnswers,
+            goalSuggestions,
+            goalAnalysisResult,
+            goalRecAnalyses,
+            selectedGoal,
+            dashboardConfig,
+            smartStage
+          },
+          savedAt: new Date().toISOString()
+        };
+        
+        safeLocalStorageSet('vision_session_draft', sessionDraft);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [
+    user,
+    datasets,
+    activeDatasetId,
+    reportItems,
+    reportHistory,
+    reportDraft,
+    introQuestions,
+    introAnswers,
+    goalSuggestions,
+    goalAnalysisResult,
+    goalRecAnalyses,
+    selectedGoal,
+    dashboardConfig,
+    smartStage
+  ]);
+
+  // Function to load last session draft
+  const handleLoadLastSession = useCallback(() => {
+    try {
+      const sessionDraft = localStorage.getItem('vision_session_draft');
+      if (sessionDraft) {
+        const data = JSON.parse(sessionDraft);
+        
+        // Restore datasets - try from full storage first, then fallback to metadata
+        if (data.datasetMetadata && data.datasetMetadata.length > 0) {
+          // Try to load full datasets from separate storage
+          const fullDatasets = localStorage.getItem('vision_datasets_full');
+          if (fullDatasets) {
+            try {
+              const parsed = JSON.parse(fullDatasets);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                setDatasets(parsed);
+                if (data.activeDatasetId) {
+                  setActiveDatasetId(data.activeDatasetId);
+                } else if (parsed.length > 0) {
+                  setActiveDatasetId(parsed[0].id);
+                }
+              }
+            } catch (e) {
+              console.error('Error loading full datasets:', e);
+            }
+          }
+        } else if (data.datasets && data.datasets.length > 0) {
+          // Fallback: old format with full datasets
+          setDatasets(data.datasets);
+          if (data.activeDatasetId) {
+            setActiveDatasetId(data.activeDatasetId);
+          } else if (data.datasets.length > 0) {
+            setActiveDatasetId(data.datasets[0].id);
+          }
+        }
+        
+               // Restore report items
+               if (data.reportItems && data.reportItems.length > 0) {
+                 // Convert timestamp strings back to Date objects
+                 setReportItems(normalizeReportItems(data.reportItems));
+               }
+        
+        // Restore report history
+        if (data.reportHistory) {
+          setReportHistory(data.reportHistory);
+        }
+        
+        // Restore report draft
+        if (data.reportDraft) {
+          setReportDraft(data.reportDraft);
+        }
+        
+        // Restore Smart Analysis state
+        if (data.smartAnalysisDraft) {
+          const sa = data.smartAnalysisDraft;
+          if (sa.introQuestions) setIntroQuestions(sa.introQuestions);
+          if (sa.introAnswers) setIntroAnswers(sa.introAnswers);
+          if (sa.goalSuggestions) setGoalSuggestions(sa.goalSuggestions);
+          if (sa.goalAnalysisResult) setGoalAnalysisResult(sa.goalAnalysisResult);
+          if (sa.goalRecAnalyses) setGoalRecAnalyses(sa.goalRecAnalyses);
+          if (sa.selectedGoal) setSelectedGoal(sa.selectedGoal);
+          if (sa.dashboardConfig) setDashboardConfig(sa.dashboardConfig);
+          if (sa.smartStage) setSmartStage(sa.smartStage);
+          setSmartAnalysisDraft(sa);
+        }
+        
+        // Restore Deep Dive cache
+        if (data.deepDiveCache) {
+          localStorage.setItem('vision_deep_dive_cache', JSON.stringify(data.deepDiveCache));
+        }
+        
+        alert(`Last session restored! Loaded ${data.datasets?.length || 0} datasets, ${data.reportItems?.length || 0} report items, and all analysis results.`);
+      } else {
+        alert('No saved session found.');
+      }
+    } catch (error) {
+      console.error('Error loading last session:', error);
+      alert('Error loading last session. Please try again.');
+    }
+  }, [
+    setDatasets,
+    setActiveDatasetId,
+    setReportItems,
+    setReportHistory,
+    setReportDraft,
+    setIntroQuestions,
+    setIntroAnswers,
+    setGoalSuggestions,
+    setGoalAnalysisResult,
+    setGoalRecAnalyses,
+    setSelectedGoal,
+    setDashboardConfig,
+    setSmartStage,
+    setSmartAnalysisDraft
+  ]);
+
+  // Expose load last session handler
+  useEffect(() => {
+    (window as any).__loadLastSession = handleLoadLastSession;
+    return () => {
+      delete (window as any).__loadLastSession;
+    };
+  }, [handleLoadLastSession]);
+
   // --- ACTIONS ---
 
   const handleLogin = (u: User) => {
@@ -186,11 +498,21 @@ const App: React.FC = () => {
     } finally {
       setUser(null);
       localStorage.removeItem('vision_user');
+      localStorage.removeItem('vision_datasets_full');
+      localStorage.removeItem('vision_active_dataset_id');
+      localStorage.removeItem('vision_report_draft');
+      localStorage.removeItem('vision_report_history');
+      localStorage.removeItem('vision_smart_analysis_draft');
+      localStorage.removeItem('vision_data_studio_draft');
+      localStorage.removeItem('vision_deep_dive_cache');
       setDatasets([]);
       setReportItems([]);
       setShowLanding(true);
     }
   };
+
+  const [uploadingFiles, setUploadingFiles] = useState<string[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
 
   const handleFileUpload = () => {
       // Simulate file click
@@ -201,6 +523,9 @@ const App: React.FC = () => {
       input.onchange = async (e: any) => {
           const files = Array.from(e.target.files) as File[];
           if (files.length === 0) return;
+
+          setIsUploading(true);
+          setUploadingFiles(files.map(f => f.name));
 
           const newDatasets: Dataset[] = [];
           for (const file of files) {
@@ -229,6 +554,9 @@ const App: React.FC = () => {
               });
               if (!activeDatasetId) setActiveDatasetId(newDatasets[0].id);
           }
+          
+          setIsUploading(false);
+          setUploadingFiles([]);
       };
       input.click();
   };
@@ -375,8 +703,8 @@ const App: React.FC = () => {
                         setReportDraft({ items: reportItems, context: {}, title: 'Draft Report' });
                       }}
                       onDraftLoad={() => {
-                        if (reportDraft) {
-                          setReportItems(reportDraft.items);
+                        if (reportDraft && reportDraft.items) {
+                          setReportItems(normalizeReportItems(reportDraft.items));
                         }
                       }}
                       onReset={() => {
@@ -398,6 +726,8 @@ const App: React.FC = () => {
   if (!user && !showLanding) return <Login onLogin={handleLogin} />;
 
   return (
+    <>
+      <UploadOverlay isUploading={isUploading} files={uploadingFiles} />
     <Layout 
       currentStage={appStage}
       cartItemCount={reportItems.length}
@@ -436,7 +766,7 @@ const App: React.FC = () => {
           setAppStage(AppStage.REPORT);
           setTimeout(() => {
             if (reportDraft && reportDraft.items) {
-              setReportItems(reportDraft.items);
+              setReportItems(normalizeReportItems(reportDraft.items));
             }
           }, 100);
         }
@@ -487,13 +817,15 @@ const App: React.FC = () => {
         setAppStage(AppStage.REPORT);
         setTimeout(() => {
           if (reportDraft && reportDraft.items) {
-            setReportItems(reportDraft.items);
+            setReportItems(normalizeReportItems(reportDraft.items));
           }
         }, 100);
       }}
+      onLoadLastSession={handleLoadLastSession}
     >
         {renderContent()}
     </Layout>
+    </>
   );
 };
 

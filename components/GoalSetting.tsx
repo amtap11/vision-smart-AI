@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { ColumnProfile, RoadmapStep, Recommendation, PatientRecord, ChartConfig, ReportItem, GoalAnalysisResult } from '../types';
 import { generateGoalRoadmap, generateRecommendationAnalysis, generateGoalSuggestions } from '../services/geminiService';
 import { generateDatasetSummary } from '../services/dataService';
-import { Target, Map, Lightbulb, ArrowRight, Loader2, FileSearch, Microscope, Sparkles, RefreshCw, Plus } from 'lucide-react';
+import { Target, Map, Lightbulb, ArrowRight, Loader2, FileSearch, Microscope, Sparkles, RefreshCw, Plus, ArrowLeft } from 'lucide-react';
 
 interface GoalSettingProps {
   columns: ColumnProfile[];
@@ -12,9 +12,11 @@ interface GoalSettingProps {
   initialAnalysisResult: GoalAnalysisResult | null;
   initialRecAnalyses: Record<number, string>;
   selectedGoal: string;
+  autoGenerate?: boolean; // Only generate if explicitly enabled
   onGoalSet: (goal: string, roadmap: RoadmapStep[], recs: Recommendation[], dashboardConfig: ChartConfig[]) => void;
   onStateChange: (suggestions: string[], result: GoalAnalysisResult | null, recAnalyses: Record<number, string>) => void;
   onNext: () => void;
+  onBack?: () => void; // Optional back navigation
   onAddToReport: (item: Omit<ReportItem, 'id' | 'timestamp'>) => void;
 }
 
@@ -25,9 +27,11 @@ const GoalSetting: React.FC<GoalSettingProps> = ({
   initialAnalysisResult,
   initialRecAnalyses,
   selectedGoal: parentSelectedGoal,
+  autoGenerate = false,
   onGoalSet, 
   onStateChange,
-  onNext, 
+  onNext,
+  onBack,
   onAddToReport 
 }) => {
   // Local state initialized with props
@@ -49,22 +53,29 @@ const GoalSetting: React.FC<GoalSettingProps> = ({
     onStateChange(suggestedGoals, result, recAnalyses);
   }, [suggestedGoals, result, recAnalyses, onStateChange]);
 
-  // Initial Fetch for Suggestions (Only if needed)
+  // Initial Fetch for Suggestions (Only if autoGenerate is true and no suggestions exist)
   useEffect(() => {
     const fetchSuggestions = async () => {
+      if (!autoGenerate) return; // Don't auto-generate unless explicitly enabled
       if (initialSuggestedGoals && initialSuggestedGoals.length > 0) return;
 
       setLoadingSuggestions(true);
-      // Brief delay to ensure transition is smooth and summary is ready
-      const summary = generateDatasetSummary(data);
-      const suggestions = await generateGoalSuggestions(summary);
-      setSuggestedGoals(suggestions);
-      setLoadingSuggestions(false);
+      try {
+        // Brief delay to ensure transition is smooth and summary is ready
+        const summary = generateDatasetSummary(data);
+        const suggestions = await generateGoalSuggestions(summary);
+        setSuggestedGoals(suggestions);
+      } catch (error: any) {
+        console.error('Failed to generate goal suggestions:', error);
+        alert(`AI Error: ${error?.message || 'Failed to generate goal suggestions. Please check your API key and backend connection.'}`);
+      } finally {
+        setLoadingSuggestions(false);
+      }
     };
 
     fetchSuggestions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [autoGenerate]);
 
   const handleAnalyze = async () => {
     const goal = customGoal || selectedGoal;
@@ -73,13 +84,19 @@ const GoalSetting: React.FC<GoalSettingProps> = ({
     setLoading(true);
     setRecAnalyses({}); // Clear previous detailed analyses
     
-    // Generate summary context
-    const dataSummary = generateDatasetSummary(data);
+    try {
+      // Generate summary context
+      const dataSummary = generateDatasetSummary(data);
 
-    const response = await generateGoalRoadmap(goal, columns, dataSummary);
-    setResult(response);
-    onGoalSet(goal, response.roadmap, response.recommendations, response.dashboardConfig);
-    setLoading(false);
+      const response = await generateGoalRoadmap(goal, columns, dataSummary);
+      setResult(response);
+      onGoalSet(goal, response.roadmap, response.recommendations, response.dashboardConfig);
+    } catch (error: any) {
+      console.error('Failed to generate goal roadmap:', error);
+      alert(`AI Error: ${error?.message || 'Failed to analyze goal. Please check your API key and backend connection.'}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDeepDive = async (index: number, rec: Recommendation) => {
@@ -105,7 +122,16 @@ const GoalSetting: React.FC<GoalSettingProps> = ({
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="text-center max-w-2xl mx-auto">
+      <div className="text-center max-w-2xl mx-auto relative">
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="absolute left-0 top-0 p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+            title="Go back to Introspection"
+          >
+            <ArrowLeft size={20} />
+          </button>
+        )}
         <div className="inline-flex p-3 bg-purple-100 text-purple-600 rounded-full mb-4">
           <Target size={32} />
         </div>

@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { PatientRecord, ChartConfig, ReportItem } from '../types';
 import { generateDatasetSummary, getFilterableColumns } from '../services/dataService';
 import { generateChartExplanation, generateSingleChartConfig } from '../services/geminiService';
@@ -12,7 +12,7 @@ import {
   Layout, Loader2, BarChart2, PieChart as PieChartIcon, 
   LineChart as LineChartIcon, Activity, X, PlusCircle, Sparkles, Filter, 
   ScatterChart as ScatterIcon, Map as MapIcon, BoxSelect, AlertTriangle, 
-  Calculator, Pencil, Trash2, Check
+  Calculator, Pencil, Trash2, Check, ArrowLeft, ChevronLeft
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -45,44 +45,104 @@ const WidgetCard: React.FC<{
     
     // Memoize the chart-specific data transformation
     const chartData = useMemo(() => {
-        const { type, dataKey, xAxisKey, aggregation } = chart;
-        
-        if (type === 'kpi') {
-            if (aggregation === 'count') return data.length;
-            const sum = data.reduce((acc, curr) => acc + (Number(curr[dataKey]) || 0), 0);
-            if (aggregation === 'average') return data.length ? sum / data.length : 0;
-            return sum;
-        }
-
-        if (type === 'scatter' || type === 'boxplot') {
-            if (!xAxisKey) return [];
-            return data.slice(0, 300).map(row => ({
-                x: row[xAxisKey],
-                y: Number(row[dataKey]) || 0,
-                z: 1
-            })).filter(p => p.x != null && !isNaN(p.y));
-        }
-
-        if (!xAxisKey) return [];
-        const groups: Record<string, { sum: number, count: number }> = {};
-        
-        data.forEach(row => {
-            const key = String(row[xAxisKey] || 'Unknown');
-            if (!groups[key]) groups[key] = { sum: 0, count: 0 };
-            const val = Number(row[dataKey]);
-            if (!isNaN(val)) {
-                groups[key].sum += val;
-                groups[key].count += 1;
+        try {
+            const { type, dataKey, xAxisKey, aggregation } = chart;
+            
+            if (!data || data.length === 0) {
+                return type === 'kpi' ? 0 : [];
             }
-        });
+            
+            if (type === 'kpi') {
+                if (aggregation === 'count' || dataKey?.toUpperCase() === 'COUNT' || !dataKey || dataKey === 'count') {
+                    return data.length;
+                }
+                // Validate dataKey exists in data
+                if (data.length > 0 && !(dataKey in data[0])) {
+                    console.warn(`Column "${dataKey}" not found in data. Using count instead.`);
+                    return data.length;
+                }
+                const sum = data.reduce((acc, curr) => {
+                    const val = curr[dataKey];
+                    return acc + (Number(val) || 0);
+                }, 0);
+                if (aggregation === 'average') return data.length ? sum / data.length : 0;
+                return sum;
+            }
 
-        return Object.entries(groups).map(([name, stats]) => {
-            let value = 0;
-            if (aggregation === 'count') value = stats.count;
-            else if (aggregation === 'average') value = stats.count ? stats.sum / stats.count : 0;
-            else value = stats.sum;
-            return { name, value: Number(value.toFixed(2)) };
-        }).sort((a, b) => b.value - a.value).slice(0, 20);
+            if (type === 'scatter' || type === 'boxplot') {
+                if (!xAxisKey || !dataKey) return [];
+                return data.slice(0, 300).map(row => ({
+                    x: row[xAxisKey],
+                    y: Number(row[dataKey]) || 0,
+                    z: 1
+                })).filter(p => p.x != null && !isNaN(p.y));
+            }
+
+            if (!xAxisKey || !dataKey) {
+                console.warn(`Chart "${chart.title}" missing xAxisKey or dataKey:`, { xAxisKey, dataKey, chart });
+                return [];
+            }
+            
+            // Validate that columns exist in data
+            if (data.length > 0) {
+                const firstRow = data[0];
+                if (!(xAxisKey in firstRow)) {
+                    console.warn(`Chart "${chart.title}": xAxisKey "${xAxisKey}" not found in data. Available columns:`, Object.keys(firstRow));
+                    return [];
+                }
+                if (!(dataKey in firstRow)) {
+                    console.warn(`Chart "${chart.title}": dataKey "${dataKey}" not found in data. Available columns:`, Object.keys(firstRow));
+                    return [];
+                }
+            }
+            
+            const groups: Record<string, { sum: number, count: number }> = {};
+            
+            data.forEach(row => {
+                try {
+                    const key = String(row[xAxisKey] || 'Unknown');
+                    if (!groups[key]) groups[key] = { sum: 0, count: 0 };
+                    const val = Number(row[dataKey]);
+                    if (!isNaN(val)) {
+                        groups[key].sum += val;
+                        groups[key].count += 1;
+                    } else if (aggregation === 'count') {
+                        // For count aggregation, count all rows even if dataKey is not numeric
+                        groups[key].count += 1;
+                    }
+                } catch (e) {
+                    console.warn('Error processing row:', e);
+                }
+            });
+
+            const result = Object.entries(groups).map(([name, stats]) => {
+                let value = 0;
+                if (aggregation === 'count') value = stats.count;
+                else if (aggregation === 'average') value = stats.count ? stats.sum / stats.count : 0;
+                else value = stats.sum;
+                return { name, value: Number(value.toFixed(2)) };
+            }).sort((a, b) => b.value - a.value).slice(0, 20);
+            
+            if (result.length === 0) {
+                console.warn(`Chart "${chart.title}" produced no data after processing.`, { 
+                    xAxisKey, 
+                    dataKey, 
+                    aggregation, 
+                    dataLength: data.length,
+                    groupsCount: Object.keys(groups).length
+                });
+            } else {
+                console.log(`Chart "${chart.title}" processed successfully:`, { 
+                    dataPoints: result.length,
+                    sample: result.slice(0, 3)
+                });
+            }
+            
+            return result;
+        } catch (error) {
+            console.error('Error processing chart data:', error, chart);
+            return chart.type === 'kpi' ? 0 : [];
+        }
     }, [chart, data]);
 
     const getIcon = (type: string) => {
@@ -132,14 +192,39 @@ const WidgetCard: React.FC<{
 
             <div className="flex-1 p-4 min-h-0 w-full relative">
                 {(!chartData || (Array.isArray(chartData) && chartData.length === 0)) ? (
-                    <div className="h-full flex items-center justify-center text-slate-400 text-sm">No data available</div>
+                    <div className="h-full flex flex-col items-center justify-center text-slate-400 text-sm gap-2">
+                        <div>No data available</div>
+                        {chart.xAxisKey && chart.dataKey && (
+                            <div className="text-xs text-slate-300 text-center px-4">
+                                Check: xAxisKey="{chart.xAxisKey}", dataKey="{chart.dataKey}"
+                            </div>
+                        )}
+                        {(!chart.xAxisKey || !chart.dataKey) && (
+                            <div className="text-xs text-slate-300 text-center px-4">
+                                Missing chart configuration
+                            </div>
+                        )}
+                    </div>
                 ) : chart.type === 'kpi' ? (
                     <div className="h-full flex flex-col items-center justify-center text-center">
                         <div className="text-4xl font-bold text-indigo-600 mb-2 font-mono">
                             {(chartData as number).toLocaleString(undefined, { maximumFractionDigits: 1 })}
                         </div>
                         <div className="text-xs text-slate-400 uppercase tracking-wide font-semibold bg-slate-50 px-2 py-1 rounded border border-slate-100">
-                            {chart.aggregation} of {chart.dataKey}
+                            {(() => {
+                                const dataKey = chart.dataKey?.toUpperCase();
+                                const agg = chart.aggregation;
+                                if (agg === 'count' && (dataKey === 'COUNT' || dataKey === 'COUNT' || !chart.dataKey || chart.dataKey === 'count')) {
+                                    return 'Total Count';
+                                }
+                                if (agg === 'count') {
+                                    return `Count of ${chart.dataKey || 'Records'}`;
+                                }
+                                if (!chart.dataKey || chart.dataKey === 'count') {
+                                    return 'Total Count';
+                                }
+                                return `${agg} of ${chart.dataKey}`;
+                            })()}
                         </div>
                     </div>
                 ) : (
@@ -168,7 +253,17 @@ const WidgetCard: React.FC<{
                             </LineChart>
                         ) : chart.type === 'pie' ? (
                             <PieChart>
-                                <Pie data={chartData as any[]} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                                <Pie 
+                                    data={chartData as any[]} 
+                                    cx="50%" 
+                                    cy="50%" 
+                                    innerRadius={60} 
+                                    outerRadius={80} 
+                                    paddingAngle={5} 
+                                    dataKey="value"
+                                    nameKey="name"
+                                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                                >
                                     {(chartData as any[]).map((_, index) => (
                                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                     ))}
@@ -203,8 +298,87 @@ const WidgetCard: React.FC<{
 // Explicit displayName for React.memo to assist debugging and some HMR tools
 WidgetCard.displayName = 'WidgetCard';
 
-const Dashboard: React.FC<DashboardProps> = ({ data, goal, config, onAddToReport }) => {
-  const [widgets, setWidgets] = useState<ChartConfig[]>(config);
+const Dashboard: React.FC<DashboardProps> = ({ data, goal, config, onAddToReport, onBack }) => {
+  // Normalize config on initialization - fix "COUNT" to "count" and validate
+  const normalizedConfig = React.useMemo(() => {
+    if (!config || !Array.isArray(config)) {
+      console.warn('Invalid config provided to Dashboard:', config);
+      return [];
+    }
+    
+    // Get available columns from data
+    const availableColumns = data.length > 0 ? Object.keys(data[0]) : [];
+    
+    return config
+      .filter(chart => chart && chart.type && chart.title) // Filter out invalid configs
+      .map(chart => {
+        try {
+          // Normalize COUNT to count
+          if (chart.dataKey?.toUpperCase() === 'COUNT') {
+            return { ...chart, dataKey: 'count', aggregation: 'count' };
+          }
+          if (chart.dataKey === 'count' && chart.aggregation !== 'count') {
+            return { ...chart, aggregation: 'count' };
+          }
+          
+          // Validate column names exist in data (except for 'count' dataKey)
+          if (chart.dataKey && chart.dataKey !== 'count' && availableColumns.length > 0) {
+            if (!availableColumns.includes(chart.dataKey)) {
+              console.warn(`Chart "${chart.title}": dataKey "${chart.dataKey}" not found in data. Available:`, availableColumns);
+              // For non-KPI charts, if dataKey is invalid, try to use a numeric column or fallback to count
+              if (chart.type !== 'kpi') {
+                const numericCol = availableColumns.find(col => {
+                  const sample = data[0]?.[col];
+                  return typeof sample === 'number' || !isNaN(Number(sample));
+                });
+                if (numericCol) {
+                  console.warn(`Using fallback numeric column "${numericCol}" for dataKey`);
+                  chart.dataKey = numericCol;
+                } else {
+                  console.warn(`No numeric column found, using count aggregation`);
+                  chart.dataKey = 'count';
+                  chart.aggregation = 'count';
+                }
+              }
+            }
+          }
+          
+          if (chart.xAxisKey && availableColumns.length > 0 && !availableColumns.includes(chart.xAxisKey)) {
+            console.warn(`Chart "${chart.title}": xAxisKey "${chart.xAxisKey}" not found in data. Available:`, availableColumns);
+            // Try to find a string/categorical column for xAxisKey
+            const stringCol = availableColumns.find(col => {
+              const sample = data[0]?.[col];
+              return typeof sample === 'string' || (sample && !isNaN(Number(sample)) === false);
+            });
+            if (stringCol) {
+              console.warn(`Using fallback column "${stringCol}" for xAxisKey`);
+              chart.xAxisKey = stringCol;
+            }
+          }
+          
+          // Ensure required fields
+          return {
+            ...chart,
+            title: chart.title || 'Untitled Chart',
+            type: chart.type || 'bar',
+            dataKey: chart.dataKey || 'count',
+            aggregation: chart.aggregation || 'count'
+          };
+        } catch (error) {
+          console.error('Error normalizing chart config:', error, chart);
+          return null;
+        }
+      })
+      .filter((chart): chart is ChartConfig => chart !== null); // Remove nulls
+  }, [config, data]);
+  
+  const [widgets, setWidgets] = useState<ChartConfig[]>(normalizedConfig);
+  
+  // Update widgets when config changes
+  useEffect(() => {
+    setWidgets(normalizedConfig);
+  }, [normalizedConfig]);
+  
   const [isEditing, setIsEditing] = useState(false);
   const [filterCol, setFilterCol] = useState<string>('');
   const [filterVal, setFilterVal] = useState<string>('');
@@ -258,9 +432,10 @@ const Dashboard: React.FC<DashboardProps> = ({ data, goal, config, onAddToReport
         setWidgets(prev => [...prev, newChart]);
         setCustomPrompt('');
         setIsEditing(false); 
-    } catch (e) {
-        console.error(e);
-        alert("Could not generate chart. Please try again.");
+    } catch (e: any) {
+        console.error('Failed to generate widget:', e);
+        const errorMsg = e?.message || 'Could not generate chart. Please try again.';
+        alert(`AI Error: ${errorMsg}\n\nPlease check:\n- Backend is running\n- GEMINI_API_KEY is set in backend/.env\n- You are logged in`);
     } finally {
         setIsGenerating(false);
     }
@@ -304,11 +479,22 @@ const Dashboard: React.FC<DashboardProps> = ({ data, goal, config, onAddToReport
   return (
     <div className="space-y-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-slate-200 pb-6">
-            <div>
-                <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                    <Layout className="text-indigo-600" /> Vision Board
-                </h2>
-                <p className="text-slate-500 text-sm mt-1">Real-time analytics for: <span className="font-semibold text-slate-700">{goal}</span></p>
+            <div className="flex items-start gap-3">
+                {onBack && (
+                    <button
+                        onClick={onBack}
+                        className="mt-1 p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                        title="Go back to Goal Setting"
+                    >
+                        <ArrowLeft size={20} />
+                    </button>
+                )}
+                <div>
+                    <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                        <Layout className="text-indigo-600" /> Vision Board
+                    </h2>
+                    <p className="text-slate-500 text-sm mt-1">Real-time analytics for: <span className="font-semibold text-slate-700">{goal}</span></p>
+                </div>
             </div>
 
             <div className="flex items-center gap-3">
@@ -352,17 +538,36 @@ const Dashboard: React.FC<DashboardProps> = ({ data, goal, config, onAddToReport
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {widgets.map((chart, idx) => (
-                <WidgetCard 
-                    key={`${chart.title}-${idx}`} 
-                    chart={chart}
-                    data={displayData}
-                    isEditing={isEditing}
-                    onRemove={() => handleRemoveWidget(idx)}
-                    onExplain={() => handleExplain(chart)}
-                    onAdd={(data) => handleAddToReportWrap(chart, data)}
-                />
-            ))}
+            {widgets.length === 0 ? (
+                <div className="col-span-full text-center py-12 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50">
+                    <p className="text-slate-400 mb-2">No charts configured yet</p>
+                    <p className="text-xs text-slate-400">Click the edit button to add widgets</p>
+                </div>
+            ) : (
+                widgets.map((chart, idx) => {
+                    try {
+                        return (
+                            <WidgetCard 
+                                key={`${chart.title}-${idx}-${chart.type}`} 
+                                chart={chart}
+                                data={displayData}
+                                isEditing={isEditing}
+                                onRemove={() => handleRemoveWidget(idx)}
+                                onExplain={() => handleExplain(chart)}
+                                onAdd={(data) => handleAddToReportWrap(chart, data)}
+                            />
+                        );
+                    } catch (error) {
+                        console.error(`Error rendering widget ${idx}:`, error, chart);
+                        return (
+                            <div key={`error-${idx}`} className="bg-red-50 border border-red-200 rounded-xl p-4">
+                                <p className="text-red-600 text-sm font-semibold">Error rendering chart</p>
+                                <p className="text-red-500 text-xs mt-1">{chart.title || 'Untitled'}</p>
+                            </div>
+                        );
+                    }
+                })
+            )}
 
             {isEditing && (
                 <div className="col-span-1 md:col-span-2 h-80 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50/50 flex flex-col p-4 transition-all">

@@ -7,7 +7,11 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "db:migrate": "node dist/config/migrate.js"
+    "db:migrate": "node dist/config/migrate.js",
+    "check-user": "tsx src/scripts/checkUser.ts",
+    "add-user": "tsx src/scripts/addUser.ts",
+    "verify-password": "tsx src/scripts/verifyPassword.ts",
+    "reset-password": "tsx src/scripts/resetPassword.ts"
   },
   "keywords": [
     "ai",

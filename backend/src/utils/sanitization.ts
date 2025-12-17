@@ -18,13 +18,17 @@ export function sanitizeString(input: string): string {
 
 /**
  * Sanitize email input
+ * Note: normalizeEmail removes dots from Gmail addresses, which can cause issues
+ * For login/registration, we'll just trim and lowercase to maintain consistency
  */
 export function sanitizeEmail(email: string): string {
   if (typeof email !== 'string') {
     return '';
   }
 
-  return validator.normalizeEmail(email.trim().toLowerCase()) || '';
+  // Just trim and lowercase - don't normalize (which removes dots)
+  // This ensures the email stored matches what users type
+  return email.trim().toLowerCase();
 }
 
 /**

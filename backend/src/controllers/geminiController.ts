@@ -39,6 +39,12 @@ function convertSchemaToTypeEnum(schema: any): any {
     
     if (key === 'type' && typeof value === 'string' && typeStringMap[value]) {
       converted[key] = typeStringMap[value];
+    } else if (key === 'items' && value && typeof value === 'object') {
+      // Recursively convert items (for nested arrays)
+      converted[key] = convertSchemaToTypeEnum(value);
+    } else if (key === 'properties' && value && typeof value === 'object') {
+      // Recursively convert properties (for nested objects)
+      converted[key] = convertSchemaToTypeEnum(value);
     } else if (value && typeof value === 'object') {
       if ('type' in value && typeof value.type === 'string' && typeStringMap[value.type]) {
         converted[key] = {
@@ -86,7 +92,12 @@ export async function analyzeData(req: AuthRequest, res: Response): Promise<void
     }
     if (responseSchema) {
       // Convert string-based schema to Type enum schema if needed
-      config.responseSchema = convertSchemaToTypeEnum(responseSchema);
+      const convertedSchema = convertSchemaToTypeEnum(responseSchema);
+      console.log('Schema conversion:', {
+        original: JSON.stringify(responseSchema).substring(0, 200),
+        converted: JSON.stringify(convertedSchema).substring(0, 200)
+      });
+      config.responseSchema = convertedSchema;
     }
 
     // Log AI operation request
@@ -104,6 +115,13 @@ export async function analyzeData(req: AuthRequest, res: Response): Promise<void
     );
 
     // Generate content
+    console.log('Calling Gemini API with:', {
+      model: modelName,
+      promptLength: fullPrompt.length,
+      hasConfig: Object.keys(config).length > 0,
+      hasSchema: !!config.responseSchema
+    });
+    
     const result = await ai.models.generateContent({
       model: modelName,
       contents: fullPrompt,
@@ -111,6 +129,7 @@ export async function analyzeData(req: AuthRequest, res: Response): Promise<void
     });
 
     const text = result.text;
+    console.log('Gemini API response received, length:', text?.length || 0);
 
     res.json({
       success: true,

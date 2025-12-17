@@ -11,6 +11,7 @@ interface IntrospectionProps {
   data: PatientRecord[];
   initialQuestions: AnalyticalQuestion[];
   initialAnswers: Record<number, string>;
+  autoGenerate?: boolean; // Only generate if explicitly enabled
   onStateChange: (questions: AnalyticalQuestion[], answers: Record<number, string>) => void;
   onNext: () => void;
   onAddToReport: (item: Omit<ReportItem, 'id' | 'timestamp'>) => void;
@@ -22,6 +23,7 @@ const Introspection: React.FC<IntrospectionProps> = ({
   data, 
   initialQuestions,
   initialAnswers,
+  autoGenerate = false,
   onStateChange,
   onNext, 
   onAddToReport 
@@ -45,20 +47,28 @@ const Introspection: React.FC<IntrospectionProps> = ({
     onStateChange(questions, answers);
   }, [questions, answers, onStateChange]);
 
-  // Initial Fetch logic (Only if no questions exist)
+  // Initial Fetch logic (Only if autoGenerate is true and no questions exist)
   useEffect(() => {
     const fetchQuestions = async () => {
+      if (!autoGenerate) return; // Don't auto-generate unless explicitly enabled
       if (initialQuestions && initialQuestions.length > 0) return; // Use existing data
       
       setLoading(true);
-      const results = await generateIntrospectionQuestions(columns, rowCount);
-      setQuestions(results);
-      setLoading(false);
+      try {
+        const results = await generateIntrospectionQuestions(columns, rowCount);
+        setQuestions(results);
+      } catch (error: any) {
+        console.error('Failed to generate introspection questions:', error);
+        // Show user-friendly error
+        alert(`AI Error: ${error?.message || 'Failed to generate questions. Please check your API key and backend connection.'}`);
+      } finally {
+        setLoading(false);
+      }
     };
 
     fetchQuestions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [autoGenerate]);
 
   const handleAnalyzeQuestion = async (index: number, question: string) => {
     if (answers[index]) return; // Already answered

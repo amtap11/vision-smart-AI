@@ -22,7 +22,7 @@ export async function register(req: Request, res: Response): Promise<void> {
   try {
     const validatedData = registerSchema.parse(req.body);
 
-    // Sanitize inputs
+    // Sanitize inputs - use normalizeEmail to ensure consistent storage
     const email = sanitizeEmail(validatedData.email);
     const name = sanitizeString(validatedData.name);
 
@@ -81,10 +81,19 @@ export async function login(req: Request, res: Response): Promise<void> {
 
     // Sanitize email
     const email = sanitizeEmail(validatedData.email);
+    
+    // Debug logging (remove in production)
+    console.log('Login attempt:', {
+      originalEmail: validatedData.email,
+      sanitizedEmail: email,
+      passwordLength: validatedData.password.length,
+      passwordPreview: validatedData.password.substring(0, 3) + '...'
+    });
 
     // Find user by email
     const user = await UserModel.findByEmail(email);
     if (!user) {
+      console.log('User not found for email:', email);
       await logAuthEvent(AuditEventType.LOGIN_FAILURE, req, undefined, false, 'User not found');
       res.status(401).json({ error: 'Invalid email or password' });
       return;
@@ -96,6 +105,7 @@ export async function login(req: Request, res: Response): Promise<void> {
       validatedData.password
     );
     if (!isPasswordValid) {
+      console.log('Password verification failed for user:', user.id);
       await logAuthEvent(AuditEventType.LOGIN_FAILURE, req, user.id, false, 'Invalid password');
       res.status(401).json({ error: 'Invalid email or password' });
       return;

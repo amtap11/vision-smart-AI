@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Upload, FileText, Plus, X, GitMerge, TrendingUp, Sparkles, Loader2, Calculator, ArrowRight, Wand2, ArrowDownUp, Split, Combine, CheckCircle2, Layers, PlayCircle, Lightbulb, Sigma, Search, LineChart as LineChartIcon, BoxSelect, Info, HelpCircle, Grid, Clock, Share2, ScatterChart as ScatterIcon, Settings2, MessageSquare, Bot, Send, Download, Scissors, Table2, Trash2, Filter } from 'lucide-react';
+import { Upload, FileText, Plus, X, GitMerge, TrendingUp, Sparkles, Loader2, Calculator, ArrowRight, Wand2, ArrowDownUp, Split, Combine, CheckCircle2, Layers, PlayCircle, Lightbulb, Sigma, Search, LineChart as LineChartIcon, BoxSelect, Info, HelpCircle, Grid, Clock, Share2, ScatterChart as ScatterIcon, Settings2, MessageSquare, Bot, Send, Download, Scissors, Table2, Trash2, Filter, RotateCcw } from 'lucide-react';
+import UploadOverlay from './UploadOverlay';
 import { parseCSV, generateDatasetSummary, calculatePearsonCorrelation, joinDatasets, unionDatasets, applyTransformation, trainRegressionModel, prepareMultiSourceData, calculateCorrelationMatrix, computeKMeans, computeForecast, exportToCSV, dropColumn, removeRowsWithMissing, createSample, filterDataset } from '../services/dataService';
 import { analyzeCrossFilePatterns, suggestTransformations, suggestMergeStrategy, suggestStatisticalAnalyses, getModelAdvisorResponse, suggestClusteringSetup, suggestForecastingSetup, explainStatistic } from '../services/geminiService';
 import { Dataset, PatientRecord, TransformationSuggestion, StatisticalSuggestion, RegressionModel, CorrelationMatrix, ClusterResult, ForecastResult, ChatMessage, ReportItem } from '../types';
@@ -117,6 +118,7 @@ type AnalyticsMode = 'regression' | 'clustering' | 'correlation' | 'forecast';
 const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ datasets, onUpdateDatasets, onAnalyzeDataset, onAddToReport }) => {
   const [activeTab, setActiveTab] = useState<'analysis' | 'studio'>('analysis');
   const [loadingFile, setLoadingFile] = useState(false);
+  const [uploadingFiles, setUploadingFiles] = useState<string[]>([]);
   
   // AI State
   const [aiInsights, setAiInsights] = useState<string>('');
@@ -162,6 +164,96 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ datasets, onUpdat
   const [forecastValueCol, setForecastValueCol] = useState('');
   const [forecastResult, setForecastResult] = useState<ForecastResult | null>(null);
 
+  // Load cached state on mount
+  useEffect(() => {
+    try {
+      const cached = localStorage.getItem('vision_deep_dive_cache');
+      if (cached) {
+        const data = JSON.parse(cached);
+        if (data.analyticsMode) setAnalyticsMode(data.analyticsMode);
+        if (data.trainedModel) setTrainedModel(data.trainedModel);
+        if (data.clusterResult) setClusterResult(data.clusterResult);
+        if (data.corrMatrix) setCorrMatrix(data.corrMatrix);
+        if (data.forecastResult) setForecastResult(data.forecastResult);
+        if (data.predictionInputs) setPredictionInputs(data.predictionInputs);
+        if (data.predictedValue !== null && data.predictedValue !== undefined) setPredictedValue(data.predictedValue);
+        if (data.predTargetDatasetId) setPredTargetDatasetId(data.predTargetDatasetId);
+        if (data.predTargetCol) setPredTargetCol(data.predTargetCol);
+        if (data.predFeatures) setPredFeatures(data.predFeatures);
+        if (data.clusterDsId) setClusterDsId(data.clusterDsId);
+        if (data.clusterX) setClusterX(data.clusterX);
+        if (data.clusterY) setClusterY(data.clusterY);
+        if (data.kValue) setKValue(data.kValue);
+        if (data.corrDsId) setCorrDsId(data.corrDsId);
+        if (data.forecastDsId) setForecastDsId(data.forecastDsId);
+        if (data.forecastDateCol) setForecastDateCol(data.forecastDateCol);
+        if (data.forecastValueCol) setForecastValueCol(data.forecastValueCol);
+      }
+    } catch (error) {
+      console.error('Error loading Deep Dive cache:', error);
+    }
+  }, []);
+
+  // Helper to safely save to localStorage
+  const safeLocalStorageSet = (key: string, value: any): boolean => {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+      return true;
+    } catch (error: any) {
+      if (error.name === 'QuotaExceededError' || error.message?.includes('quota')) {
+        console.warn(`localStorage quota exceeded for ${key}. Skipping save.`);
+        return false;
+      }
+      console.error(`Error saving ${key}:`, error);
+      return false;
+    }
+  };
+
+  // Auto-save state to cache
+  useEffect(() => {
+    const cacheData = {
+      analyticsMode,
+      trainedModel,
+      clusterResult,
+      corrMatrix,
+      forecastResult,
+      predictionInputs,
+      predictedValue,
+      predTargetDatasetId,
+      predTargetCol,
+      predFeatures,
+      clusterDsId,
+      clusterX,
+      clusterY,
+      kValue,
+      corrDsId,
+      forecastDsId,
+      forecastDateCol,
+      forecastValueCol,
+      savedAt: new Date().toISOString()
+    };
+    safeLocalStorageSet('vision_deep_dive_cache', cacheData);
+  }, [
+    analyticsMode,
+    trainedModel,
+    clusterResult,
+    corrMatrix,
+    forecastResult,
+    predictionInputs,
+    predictedValue,
+    predTargetDatasetId,
+    predTargetCol,
+    predFeatures,
+    clusterDsId,
+    clusterX,
+    clusterY,
+    kValue,
+    corrDsId,
+    forecastDsId,
+    forecastDateCol,
+    forecastValueCol
+  ]);
+
   // --- DATA STUDIO STATES ---
   const [shapingDsId, setShapingDsId] = useState('');
   
@@ -175,8 +267,9 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ datasets, onUpdat
   // --- COMMON HELPERS ---
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-        setLoadingFile(true);
         const files = Array.from(e.target.files) as File[];
+        setLoadingFile(true);
+        setUploadingFiles(files.map(f => f.name));
         try {
             const promises = files.map(async (file) => {
                 try {
@@ -211,7 +304,7 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ datasets, onUpdat
                 // Set initial shaping dataset if none selected
                 if (!shapingDsId && valid.length > 0) setShapingDsId(valid[0].id);
             } else { alert("Could not parse files."); }
-        } catch (error) { alert("Error uploading files"); } finally { setLoadingFile(false); e.target.value = ''; }
+        } catch (error) { alert("Error uploading files"); } finally { setLoadingFile(false); setUploadingFiles([]); e.target.value = ''; }
     }
   };
 
@@ -389,6 +482,57 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ datasets, onUpdat
       addChatMessage('ai', `Forecast generated showing a ${(result?.growthRate || 0) > 0 ? 'positive' : 'negative'} trend. The yellow area indicates uncertainty.`);
   };
 
+  // Reset all models and clear state
+  const handleResetModels = () => {
+      if (!confirm('Are you sure you want to reset all models? This will clear all trained models, clustering results, correlation matrices, and forecasts.')) {
+          return;
+      }
+
+      // Reset Regression
+      setTrainedModel(null);
+      setPredictionInputs({});
+      setPredictedValue(null);
+      setPredTargetDatasetId('');
+      setPredTargetCol('');
+      setPredJoinKey('');
+      setPredFeatures([]);
+
+      // Reset Clustering
+      setClusterResult(null);
+      setClusterDsId('');
+      setClusterX('');
+      setClusterY('');
+      setKValue(3);
+
+      // Reset Correlation
+      setCorrMatrix(null);
+      setCorrDsId('');
+
+      // Reset Forecast
+      setForecastResult(null);
+      setForecastDsId('');
+      setForecastDateCol('');
+      setForecastValueCol('');
+
+      // Reset AI Insights
+      setAiInsights('');
+
+      // Reset Chat (keep initial message)
+      setChatMessages([
+          { id: '1', role: 'ai', text: 'Hello! I am your AI Model Advisor. I can configure models and run analysis for you. Just say "Run clustering on Age and Income".', timestamp: new Date() }
+      ]);
+      setChatInput('');
+
+      // Clear localStorage cache
+      localStorage.removeItem('vision_deep_dive_cache');
+      localStorage.removeItem('vision_deep_dive_draft');
+
+      // Reset analytics mode to default
+      setAnalyticsMode('regression');
+
+      addChatMessage('ai', 'All models have been reset. Ready for a fresh start!');
+  };
+
   // --- AI SUGGESTION HANDLERS ---
   const handleAiSuggestClustering = async () => {
       if (datasets.length === 0) return;
@@ -430,6 +574,7 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ datasets, onUpdat
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 h-full flex flex-col relative">
+      <UploadOverlay isUploading={loadingFile} files={uploadingFiles} />
         {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-200 pb-6 flex-shrink-0">
             <div>
@@ -537,11 +682,20 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ datasets, onUpdat
                                 <Settings2 size={16} className="text-slate-400" />
                                 <h3 className="font-bold text-slate-700 text-sm uppercase tracking-wide">{analyticsMode} Config</h3>
                             </div>
-                            {(analyticsMode === 'clustering' || analyticsMode === 'forecast') && (
-                                <button onClick={analyticsMode === 'clustering' ? handleAiSuggestClustering : handleAiSuggestForecast} className="text-xs text-indigo-600 bg-indigo-50 px-2 py-1 rounded flex items-center gap-1 hover:bg-indigo-100 transition-colors">
-                                    <Sparkles size={10} /> Auto-Fill
+                            <div className="flex items-center gap-2">
+                                {(analyticsMode === 'clustering' || analyticsMode === 'forecast') && (
+                                    <button onClick={analyticsMode === 'clustering' ? handleAiSuggestClustering : handleAiSuggestForecast} className="text-xs text-indigo-600 bg-indigo-50 px-2 py-1 rounded flex items-center gap-1 hover:bg-indigo-100 transition-colors">
+                                        <Sparkles size={10} /> Auto-Fill
+                                    </button>
+                                )}
+                                <button 
+                                    onClick={handleResetModels}
+                                    className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded flex items-center gap-1 hover:bg-red-100 transition-colors"
+                                    title="Reset all models"
+                                >
+                                    <RotateCcw size={10} /> Reset
                                 </button>
-                            )}
+                            </div>
                         </div>
 
                         {analyticsMode === 'regression' && (
@@ -651,17 +805,50 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ datasets, onUpdat
                         {analyticsMode === 'regression' && trainedModel ? (
                             <div className="space-y-6">
                                 <div className="grid grid-cols-3 gap-4">
-                                    <div className="p-4 bg-purple-50 rounded-lg text-center border border-purple-100">
+                                    <div 
+                                        className="p-4 bg-purple-50 rounded-lg text-center border border-purple-100 relative group cursor-help"
+                                        title="R-Squared (R²) measures how well the model fits the data. Values range from 0 to 1, where 1 means perfect fit. Your value of {trainedModel.rSquared.toFixed(3)} indicates the model explains {Math.round(trainedModel.rSquared * 100)}% of the variance in the target variable."
+                                    >
                                         <div className="text-2xl font-bold text-purple-700">{trainedModel.rSquared.toFixed(3)}</div>
-                                        <div className="text-xs text-purple-500 font-bold uppercase">R-Squared</div>
+                                        <div className="text-xs text-purple-500 font-bold uppercase flex items-center justify-center gap-1">
+                                            R-Squared
+                                            <HelpCircle size={12} className="opacity-60 group-hover:opacity-100 transition-opacity" />
+                                        </div>
+                                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+                                            <div className="font-semibold mb-1">R-Squared (R²)</div>
+                                            <div>Measures how well the model fits the data. Values range from 0 to 1, where 1 means perfect fit. Your value of <strong>{trainedModel.rSquared.toFixed(3)}</strong> indicates the model explains <strong>{Math.round(trainedModel.rSquared * 100)}%</strong> of the variance in the target variable.</div>
+                                            <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-900"></div>
+                                        </div>
                                     </div>
-                                    <div className="p-4 bg-slate-50 rounded-lg text-center border border-slate-100">
+                                    <div 
+                                        className="p-4 bg-slate-50 rounded-lg text-center border border-slate-100 relative group cursor-help"
+                                        title="Mean Absolute Error (MAE) is the average difference between predicted and actual values. Lower values indicate better predictions. Your value of {trainedModel.mae.toFixed(2)} means predictions are off by an average of {trainedModel.mae.toFixed(2)} units."
+                                    >
                                         <div className="text-2xl font-bold text-slate-700">{trainedModel.mae.toFixed(2)}</div>
-                                        <div className="text-xs text-slate-500 font-bold uppercase">Mean Abs Error</div>
+                                        <div className="text-xs text-slate-500 font-bold uppercase flex items-center justify-center gap-1">
+                                            Mean Abs Error
+                                            <HelpCircle size={12} className="opacity-60 group-hover:opacity-100 transition-opacity" />
+                                        </div>
+                                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+                                            <div className="font-semibold mb-1">Mean Absolute Error (MAE)</div>
+                                            <div>The average difference between predicted and actual values. Lower values indicate better predictions. Your value of <strong>{trainedModel.mae.toFixed(2)}</strong> means predictions are off by an average of <strong>{trainedModel.mae.toFixed(2)}</strong> units.</div>
+                                            <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-900"></div>
+                                        </div>
                                     </div>
-                                    <div className="p-4 bg-slate-50 rounded-lg text-center border border-slate-100">
+                                    <div 
+                                        className="p-4 bg-slate-50 rounded-lg text-center border border-slate-100 relative group cursor-help"
+                                        title="Intercept is the predicted value when all input features are zero. It represents the baseline prediction before considering any feature effects. Your intercept of {trainedModel.intercept.toFixed(2)} is the starting point of the regression line."
+                                    >
                                         <div className="text-2xl font-bold text-slate-700">{trainedModel.intercept.toFixed(2)}</div>
-                                        <div className="text-xs text-slate-500 font-bold uppercase">Intercept</div>
+                                        <div className="text-xs text-slate-500 font-bold uppercase flex items-center justify-center gap-1">
+                                            Intercept
+                                            <HelpCircle size={12} className="opacity-60 group-hover:opacity-100 transition-opacity" />
+                                        </div>
+                                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+                                            <div className="font-semibold mb-1">Intercept</div>
+                                            <div>The predicted value when all input features are zero. It represents the baseline prediction before considering any feature effects. Your intercept of <strong>{trainedModel.intercept.toFixed(2)}</strong> is the starting point of the regression line.</div>
+                                            <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-900"></div>
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="h-64 w-full">
@@ -676,6 +863,72 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ datasets, onUpdat
                                         </ScatterChart>
                                     </ResponsiveContainer>
                                 </div>
+                                
+                                {/* Model Equation */}
+                                <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                                    <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                                        <Calculator size={16} className="text-purple-600" />
+                                        Model Equation
+                                    </h4>
+                                    <div className="bg-white rounded-lg p-4 border border-slate-200 font-mono text-sm">
+                                        <div className="text-slate-700 mb-2 font-semibold">
+                                            Y = {trainedModel.intercept.toFixed(4)}
+                                        </div>
+                                        {trainedModel.featureColumns.map((feature) => {
+                                            const coeff = trainedModel.coefficients[feature];
+                                            return (
+                                                <div key={feature} className="text-slate-600">
+                                                    {coeff >= 0 ? '+' : ''}{coeff.toFixed(4)} × <span className="font-semibold">{feature}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* Prediction Input */}
+                                <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                                    <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                                        <Lightbulb size={16} className="text-purple-600" />
+                                        Make a Prediction
+                                    </h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-3">
+                                            {trainedModel.featureColumns.map((feature) => (
+                                                <div key={feature}>
+                                                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                                                        {feature}
+                                                    </label>
+                                                    <input
+                                                        type="number"
+                                                        step="any"
+                                                        value={predictionInputs[feature] || ''}
+                                                        onChange={(e) => setPredictionInputs(prev => ({ ...prev, [feature]: e.target.value }))}
+                                                        placeholder="Enter value"
+                                                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="flex flex-col justify-center">
+                                            <button
+                                                onClick={handlePredict}
+                                                className="w-full py-3 bg-purple-600 text-white rounded-lg font-bold hover:bg-purple-700 transition-colors flex items-center justify-center gap-2 mb-3"
+                                            >
+                                                <Calculator size={18} />
+                                                Calculate Prediction
+                                            </button>
+                                            {predictedValue !== null && (
+                                                <div className="bg-white rounded-lg p-4 border-2 border-purple-200">
+                                                    <div className="text-xs text-slate-500 mb-1">Predicted Value</div>
+                                                    <div className="text-2xl font-bold text-purple-700">
+                                                        {predictedValue.toFixed(2)}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <button onClick={() => addToReport('Regression Model', trainedModel, { type: 'scatter', title: 'Actual vs Predicted' })} className="text-xs flex items-center gap-1 text-slate-400 hover:text-purple-600"><Plus size={12}/> Add to Report</button>
                             </div>
                         ) : analyticsMode === 'clustering' && clusterResult ? (
