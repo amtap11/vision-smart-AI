@@ -68,11 +68,14 @@ const DataStudio: React.FC<DataStudioProps> = ({ datasets, activeDatasetId, onUp
     // Lookup specific
     const [enrichSelectedCols, setEnrichSelectedCols] = useState<Set<string>>(new Set());
 
-    // Hypothesis Lab State
+    // State for Hypothesis Lab
     const [hypoTestType, setHypoTestType] = useState<'ttest' | 'chisquare'>('ttest');
     const [hypoColA, setHypoColA] = useState("");
     const [hypoColB, setHypoColB] = useState("");
     const [hypoResult, setHypoResult] = useState<any>(null);
+
+    // State for Sample View
+    const [showSampleModal, setShowSampleModal] = useState(false);
 
     const activeDataset = useMemo(() => datasets.find(d => d.id === activeDatasetId), [datasets, activeDatasetId]);
 
@@ -628,9 +631,17 @@ const DataStudio: React.FC<DataStudioProps> = ({ datasets, activeDatasetId, onUp
 
                         {/* Descriptive Statistics Cards */}
                         <div className="space-y-3">
-                            <h3 className="text-sm font-bold text-slate-700 uppercase flex items-center gap-2">
-                                <BarChart3 size={16} /> Descriptive Statistics
-                            </h3>
+                            <div className="flex justify-between items-center">
+                                <h3 className="text-sm font-bold text-slate-700 uppercase flex items-center gap-2">
+                                    <BarChart3 size={16} /> Descriptive Statistics
+                                </h3>
+                                <button
+                                    onClick={() => setShowSampleModal(true)}
+                                    className="text-xs bg-indigo-50 text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-md font-medium hover:bg-indigo-100 flex items-center gap-2 transition-colors"
+                                >
+                                    <Table2 size={14} /> View Data Sample
+                                </button>
+                            </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                 {stats.slice(0, 8).map((stat, idx) => (
                                     <div key={idx} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm text-xs">
@@ -1235,6 +1246,92 @@ const DataStudio: React.FC<DataStudioProps> = ({ datasets, activeDatasetId, onUp
                                 className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-bold text-sm shadow-md shadow-indigo-200 transition-colors flex items-center gap-2"
                             >
                                 <Sparkles size={16} /> Apply Fix
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* DATA SAMPLE MODAL */}
+            {showSampleModal && activeDataset && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden animate-in zoom-in-95 relative border border-slate-200">
+                        <div className="p-6 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                            <div>
+                                <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                                    <Table2 className="text-indigo-600" size={20} /> Data Sample View
+                                </h3>
+                                <p className="text-sm text-slate-500 mt-1">
+                                    Showing First 10, Middle 10, and Last 10 rows ({activeDataset.data.length > 30 ? '30' : activeDataset.data.length} of {activeDataset.data.length} rows)
+                                </p>
+                            </div>
+                            <button onClick={() => setShowSampleModal(false)} className="text-slate-400 hover:text-slate-700 p-2 hover:bg-slate-200 rounded-full transition-colors">
+                                <X size={24} />
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-auto p-0">
+                            <table className="w-full text-left text-sm border-collapse">
+                                <thead className="bg-slate-50 text-slate-500 sticky top-0 z-10 shadow-sm">
+                                    <tr>
+                                        <th className="px-4 py-3 font-medium border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wider">#</th>
+                                        {Object.keys(activeDataset.data[0] || {}).map(key => (
+                                            <th key={key} className="px-4 py-3 font-medium border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wider whitespace-nowrap">
+                                                {key}
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {(() => {
+                                        const data = activeDataset.data;
+                                        let rows: { row: any, index: number, type: string }[] = [];
+                                        
+                                        if (data.length <= 30) {
+                                            rows = data.map((row, i) => ({ row, index: i + 1, type: '' }));
+                                        } else {
+                                            // First 10
+                                            data.slice(0, 10).forEach((row, i) => rows.push({ row, index: i + 1, type: 'First 10' }));
+                                            
+                                            // Middle 10
+                                            const midStart = Math.floor((data.length / 2) - 5);
+                                            data.slice(midStart, midStart + 10).forEach((row, i) => rows.push({ row, index: midStart + i + 1, type: 'Middle 10' }));
+                                            
+                                            // Last 10
+                                            const lastStart = data.length - 10;
+                                            data.slice(lastStart).forEach((row, i) => rows.push({ row, index: lastStart + i + 1, type: 'Last 10' }));
+                                        }
+
+                                        return rows.map((item, idx) => {
+                                            // Add separator logic if needed, or just color code
+                                            const isSectionStart = idx === 0 || (idx > 0 && rows[idx-1].type !== item.type);
+                                            
+                                            return (
+                                                <React.Fragment key={idx}>
+                                                    {isSectionStart && item.type && (
+                                                        <tr className="bg-indigo-50/50">
+                                                            <td colSpan={Object.keys(activeDataset.data[0] || {}).length + 1} className="px-4 py-2 text-xs font-bold text-indigo-600 uppercase tracking-wider border-y border-indigo-100">
+                                                                {item.type}
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                    <tr className="hover:bg-slate-50 transition-colors">
+                                                        <td className="px-4 py-2 text-xs text-slate-400 font-mono border-r border-slate-100">{item.index}</td>
+                                                        {Object.keys(activeDataset.data[0] || {}).map(key => (
+                                                            <td key={key} className="px-4 py-2 text-slate-700 whitespace-nowrap max-w-xs truncate" title={String(item.row[key])}>
+                                                                {String(item.row[key] ?? '')}
+                                                            </td>
+                                                        ))}
+                                                    </tr>
+                                                </React.Fragment>
+                                            );
+                                        });
+                                    })()}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div className="p-4 bg-slate-50 border-t border-slate-200 text-right">
+                             <button onClick={() => setShowSampleModal(false)} className="px-6 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 font-bold text-sm transition-colors">
+                                Close
                             </button>
                         </div>
                     </div>
