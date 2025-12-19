@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Upload, FileText, Plus, X, GitMerge, TrendingUp, Sparkles, Loader2, Calculator, ArrowRight, Wand2, ArrowDownUp, Split, Combine, CheckCircle2, Layers, PlayCircle, Lightbulb, Sigma, Search, LineChart as LineChartIcon, BoxSelect, Info, HelpCircle, Grid, Clock, Share2, ScatterChart as ScatterIcon, Settings2, MessageSquare, Bot, Send, Download, Scissors, Table2, Trash2, Filter, RotateCcw } from 'lucide-react';
 import UploadOverlay from './UploadOverlay';
-import DataStudio from './DataStudio';
 import { analyzeCrossFilePatterns, suggestTransformations, suggestMergeStrategy, suggestStatisticalAnalyses, getModelAdvisorResponse, suggestClusteringSetup, suggestForecastingSetup, explainStatistic, suggestMLModelSetup, generateMLModelInsights } from '../services/geminiService';
 import { Dataset, PatientRecord, TransformationSuggestion, StatisticalSuggestion, RegressionModel, CorrelationMatrix, ClusterResult, ForecastResult, ChatMessage, ReportItem, DecisionTreeResult, RandomForestResult, GradientBoostingResult } from '../types';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line, ReferenceLine, LineChart, Cell, Legend } from 'recharts';
@@ -116,7 +115,6 @@ function AIInfoIcon({ type, context }: { type: 'regression' | 'clustering' | 'co
 type AnalyticsMode = 'regression' | 'clustering' | 'correlation' | 'forecast' | 'decisionTree' | 'randomForest' | 'gradientBoosting';
 
 const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ datasets, onUpdateDatasets, onAnalyzeDataset, onAddToReport }) => {
-    const [activeTab, setActiveTab] = useState<'analysis' | 'studio'>('analysis');
     const [loadingFile, setLoadingFile] = useState(false);
     const [uploadingFiles, setUploadingFiles] = useState<string[]>([]);
 
@@ -280,8 +278,7 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ datasets, onUpdat
         forecastValueCol
     ]);
 
-    // --- DATA STUDIO STATES ---
-    const [shapingDsId, setShapingDsId] = useState('');
+
 
     // Scroll chat to bottom
     useEffect(() => {
@@ -327,8 +324,7 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ datasets, onUpdat
                     // Initial Advisor Prompt
                     addChatMessage('ai', `I see you loaded ${valid.length} file(s).Ask me to find correlations or build models.`);
                     setShowChat(true);
-                    // Set initial shaping dataset if none selected
-                    if (!shapingDsId && valid.length > 0) setShapingDsId(valid[0].id);
+
                 } else { alert("Could not parse files."); }
             } catch (error) { alert("Error uploading files"); } finally { setLoadingFile(false); setUploadingFiles([]); e.target.value = ''; }
         }
@@ -336,7 +332,6 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ datasets, onUpdat
 
     const removeDataset = (id: string) => {
         onUpdateDatasets(prev => prev.filter(d => d.id !== id));
-        if (shapingDsId === id) setShapingDsId('');
     };
 
     const getNumericColumns = (datasetId: string) => {
@@ -361,13 +356,6 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ datasets, onUpdat
         });
     };
 
-    const handleAnalyzeSolo = (ds: Dataset) => {
-        setShapingDsId(ds.id);
-        setActiveTab('studio');
-        if (onAnalyzeDataset) {
-            onAnalyzeDataset(ds);
-        }
-    };
 
     // --- ADVISOR LOGIC ---
     const addChatMessage = (role: 'user' | 'ai', text: string) => {
@@ -786,53 +774,7 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ datasets, onUpdat
                 </div>
             </div>
 
-            {/* Tab Navigation */}
-            {datasets.length > 0 && (
-                <div className="flex border-b border-slate-200 flex-shrink-0">
-                    <button
-                        onClick={() => setActiveTab('analysis')}
-                        className={`px-6 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'analysis' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-                    >
-                        <Calculator size={16} /> Statistical Workbench
-                    </button>
 
-                </div>
-            )}
-
-            {/* File Cards */}
-            {datasets.length === 0 ? (
-                <div className="text-center py-12 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50">
-                    <FileText size={48} className="mx-auto text-slate-300 mb-2" />
-                    <p className="text-slate-500 font-medium">No datasets loaded.</p>
-                    <p className="text-xs text-slate-400">Upload CSV files to begin advanced analysis.</p>
-                </div>
-            ) : (
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 flex-shrink-0">
-                    {datasets.map(ds => (
-                        <div key={ds.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm relative group">
-                            <div className="absolute top-2 right-2 flex gap-1">
-                                <button onClick={() => exportToCSV(ds.data, ds.name)} className="text-slate-300 hover:text-blue-500 transition-colors" title="Export as CSV">
-                                    <Download size={16} />
-                                </button>
-                                <button onClick={() => removeDataset(ds.id)} className="text-slate-300 hover:text-red-500 transition-colors">
-                                    <X size={16} />
-                                </button>
-                            </div>
-                            <div className="flex items-center gap-3 mb-2">
-                                <div className="w-8 h-8 rounded bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-xs uppercase">CSV</div>
-                                <div className="truncate font-semibold text-slate-700 w-32" title={ds.name}>{ds.name}</div>
-                            </div>
-                            <div className="text-xs text-slate-500 flex justify-between mb-3">
-                                <span>{ds.data.length} Rows</span>
-                                <span>{Object.keys(ds.data[0] || {}).length} Cols</span>
-                            </div>
-                            <button onClick={() => handleAnalyzeSolo(ds)} className="w-full py-1.5 bg-blue-50 text-blue-600 border border-blue-100 rounded text-xs font-semibold flex items-center justify-center gap-2 hover:bg-blue-100 transition-colors">
-                                <PlayCircle size={14} /> Analyze Solo
-                            </button>
-                        </div>
-                    ))}
-                </div>
-            )}
 
             {/* --- VIEW: STATISTICAL WORKBENCH --- */}
             {datasets.length > 0 && (
@@ -1518,15 +1460,7 @@ const MultiFileAnalysis: React.FC<MultiFileAnalysisProps> = ({ datasets, onUpdat
                 </div>
             )}
 
-            {/* --- VIEW: DATA STUDIO --- */}
-            {activeTab === 'studio' && datasets.length > 0 && (
-                <DataStudio
-                    datasets={datasets}
-                    activeDatasetId={shapingDsId || (datasets[0]?.id)}
-                    onUpdateDatasets={onUpdateDatasets}
-                    onAnalyzeDataset={(id) => console.log('Analyze requested for', id)}
-                />
-            )}
+
             {/* --- TREE VISUALIZATION MODAL --- */}
             {showTreeModal && dtResult && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-8 animate-in fade-in">
