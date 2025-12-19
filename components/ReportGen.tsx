@@ -671,50 +671,63 @@ const ReportGen: React.FC<ReportGenProps> = ({ items, onRemoveItem, history, onS
     }
 
     setIsDownloading(true);
-    const title = customTitle || reportTitle;
-    const opt = {
+    // Ensure title is a string and has a fallback
+    const rawTitle = customTitle || reportTitle || 'Report';
+    const title = String(rawTitle); // Force string conversion
+
+    // Configuration generator
+    const getOptions = (scale = 1.5, quality = 0.95) => ({
       margin: [15, 15, 15, 15],
       filename: `${title.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, letterRendering: true, scrollY: 0 },
+      image: { type: 'jpeg', quality },
+      html2canvas: { scale, useCORS: true, letterRendering: true, scrollY: 0 },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
       pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
-    };
+    });
 
-    // Hard timeout using ref - will ALWAYS fire after 30 seconds
+    // Hard timeout using ref - increased to 60s
     downloadTimeoutRef.current = setTimeout(() => {
-      console.error("PDF generation exceeded 30 second timeout - forcing UI reset");
+      console.error("PDF generation exceeded 60 second timeout - forcing UI reset");
       setIsDownloading(false);
       downloadTimeoutRef.current = null;
-      alert("PDF generation timed out. This may be due to:\n\n1. Large report with many visuals\n2. Complex chart rendering\n3. Browser memory constraints\n\nTry:\n• Reducing the number of charts\n• Simplifying report content\n• Refreshing the page");
-    }, 30000);
+      alert("PDF generation timed out. Try reducing the number of charts or refreshing the page.");
+    }, 60000);
+
+    const generatePdf = async (element: HTMLElement, opt: any) => {
+      await html2pdf().set(opt).from(element).save();
+    };
 
     try {
-      // Use browser print dialog as a more reliable method
-      const printContent = customContent || (targetElement ? targetElement.innerHTML : '');
-      const printWindow = window.open('', '_blank');
-      if (printWindow) {
-        printWindow.document.write(`
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <title>${title}</title>
-            <style>
-              body { font-family: 'Plus Jakarta Sans', Arial, sans-serif; padding: 40px; max-width: 800px; margin: 0 auto; }
-              h1, h2, h3 { color: #1e293b; }
-              img { max-width: 100%; height: auto; }
-              @media print { body { padding: 20px; } }
-            </style>
-          </head>
-          <body>${printContent}</body>
-          </html>
-        `);
-        printWindow.document.close();
-        printWindow.focus();
-        setTimeout(() => {
-          printWindow.print();
-          printWindow.close();
-        }, 500);
+      let elementToPrint = targetElement;
+      let wrapper: HTMLElement | null = null;
+
+      if (customContent) {
+        wrapper = document.createElement('div');
+        wrapper.innerHTML = customContent;
+        wrapper.className = 'prose prose-slate max-w-none p-12 bg-white';
+        wrapper.style.width = '800px';
+        document.body.appendChild(wrapper);
+        elementToPrint = wrapper;
+      }
+
+      if (!elementToPrint) throw new Error("No content to print");
+
+      try {
+        // Attempt 1: High Quality (Scale 2.5, almost lossless)
+        console.log("Attempting High Quality PDF...");
+        await generatePdf(elementToPrint, getOptions(2.5, 0.99));
+      } catch (highError) {
+        console.warn("High Quality failed, retrying with Standard Quality...", highError);
+        try {
+          // Attempt 2: Standard Quality (Scale 1.5, good compression)
+          await generatePdf(elementToPrint, getOptions(1.5, 0.95));
+        } catch (medError) {
+          console.warn("Standard Quality failed, retrying with Low Quality...", medError);
+          // Attempt 3: Safe Mode (Scale 1.0, aggressive compression)
+          await generatePdf(elementToPrint, getOptions(1.0, 0.8));
+        }
+      } finally {
+        if (wrapper) document.body.removeChild(wrapper);
       }
 
       if (downloadTimeoutRef.current) {

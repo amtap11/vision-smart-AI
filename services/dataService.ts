@@ -1,6 +1,6 @@
 
 import Papa from 'papaparse';
-import { PatientRecord, DataQualityReport, ColumnProfile, ColumnStatistics, Dataset, TransformationSuggestion, RegressionModel, CorrelationMatrix, ClusterResult, ForecastResult } from '../types';
+import { PatientRecord, DataQualityReport, ColumnProfile, ColumnStatistics, Dataset, TransformationSuggestion, RegressionModel, CorrelationMatrix, ClusterResult, ForecastResult, DecisionTreeNode, DecisionTreeResult, RandomForestResult, GradientBoostingResult, GradientBoostingStage } from '../types';
 
 export const parseCSV = (file: File): Promise<PatientRecord[]> => {
   return new Promise((resolve, reject) => {
@@ -824,3 +824,480 @@ export const generateDemoData = (): string => {
   }
   return csvContent;
 };
+
+// --- DECISION TREE, RANDOM FOREST, GRADIENT BOOSTING IMPLEMENTATIONS ---
+
+// Helper: Calculate Gini impurity for classification
+const calculateGini = (labels: (string | number)[]): number => {
+  if (labels.length === 0) return 0;
+  const counts: Record<string, number> = {};
+  labels.forEach(l => { counts[String(l)] = (counts[String(l)] || 0) + 1; });
+  let gini = 1;
+  Object.values(counts).forEach(count => {
+    const prob = count / labels.length;
+    gini -= prob * prob;
+  });
+  return gini;
+};
+
+// Helper: Calculate MSE for regression
+const calculateMSE = (values: number[]): number => {
+  if (values.length === 0) return 0;
+  const mean = values.reduce((a, b) => a + b, 0) / values.length;
+  return values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length;
+};
+
+// Helper: Get majority class or mean value
+const getMajorityOrMean = (values: (string | number)[], isClassification: boolean): string | number => {
+  if (values.length === 0) return isClassification ? 'unknown' : 0;
+  if (isClassification) {
+    const counts: Record<string, number> = {};
+    values.forEach(v => { counts[String(v)] = (counts[String(v)] || 0) + 1; });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+  } else {
+    return (values as number[]).reduce((a, b) => a + b, 0) / values.length;
+  }
+};
+
+// Helper: Find best split for a node
+const findBestSplit = (
+  data: PatientRecord[],
+  targetCol: string,
+  featureCols: string[],
+  isClassification: boolean
+): { feature: string; threshold: number; gain: number } | null => {
+  if (data.length < 2) return null;
+
+  const targets = data.map(d => d[targetCol]);
+  const currentImpurity = isClassification
+    ? calculateGini(targets as (string | number)[])
+    : calculateMSE(targets as number[]);
+
+  let bestSplit: { feature: string; threshold: number; gain: number } | null = null;
+  let bestGain = 0;
+
+  for (const feature of featureCols) {
+    const featureValues = data.map(d => Number(d[feature])).filter(v => !isNaN(v));
+    if (featureValues.length < 2) continue;
+
+    const uniqueVals = [...new Set(featureValues)].sort((a, b) => a - b);
+
+    // Try midpoints between unique values as thresholds
+    for (let i = 0; i < Math.min(uniqueVals.length - 1, 10); i++) {
+      const threshold = (uniqueVals[i] + uniqueVals[i + 1]) / 2;
+
+      const leftData = data.filter(d => Number(d[feature]) <= threshold);
+      const rightData = data.filter(d => Number(d[feature]) > threshold);
+
+      if (leftData.length === 0 || rightData.length === 0) continue;
+
+      const leftTargets = leftData.map(d => d[targetCol]);
+      const rightTargets = rightData.map(d => d[targetCol]);
+
+      const leftImpurity = isClassification
+        ? calculateGini(leftTargets as (string | number)[])
+        : calculateMSE(leftTargets as number[]);
+      const rightImpurity = isClassification
+        ? calculateGini(rightTargets as (string | number)[])
+        : calculateMSE(rightTargets as number[]);
+
+      const weightedImpurity = (leftData.length * leftImpurity + rightData.length * rightImpurity) / data.length;
+      const gain = currentImpurity - weightedImpurity;
+
+      if (gain > bestGain) {
+        bestGain = gain;
+        bestSplit = { feature, threshold, gain };
+      }
+    }
+  }
+
+  return bestSplit;
+};
+
+// Recursive tree building
+const buildTree = (
+  data: PatientRecord[],
+  targetCol: string,
+  featureCols: string[],
+  isClassification: boolean,
+  depth: number,
+  maxDepth: number,
+  minSamplesSplit: number
+): DecisionTreeNode => {
+  const targets = data.map(d => d[targetCol]) as (string | number)[];
+
+  // Base cases: max depth, min samples, or pure node
+  const uniqueTargets = new Set(targets.map(String));
+  if (depth >= maxDepth || data.length < minSamplesSplit || uniqueTargets.size === 1) {
+    return {
+      isLeaf: true,
+      value: getMajorityOrMean(targets, isClassification),
+      samples: data.length,
+      impurity: isClassification ? calculateGini(targets) : calculateMSE(targets as number[])
+    };
+  }
+
+  const bestSplit = findBestSplit(data, targetCol, featureCols, isClassification);
+
+  if (!bestSplit || bestSplit.gain <= 0) {
+    return {
+      isLeaf: true,
+      value: getMajorityOrMean(targets, isClassification),
+      samples: data.length,
+      impurity: isClassification ? calculateGini(targets) : calculateMSE(targets as number[])
+    };
+  }
+
+  const leftData = data.filter(d => Number(d[bestSplit.feature]) <= bestSplit.threshold);
+  const rightData = data.filter(d => Number(d[bestSplit.feature]) > bestSplit.threshold);
+
+  return {
+    isLeaf: false,
+    feature: bestSplit.feature,
+    threshold: bestSplit.threshold,
+    samples: data.length,
+    impurity: isClassification ? calculateGini(targets) : calculateMSE(targets as number[]),
+    left: buildTree(leftData, targetCol, featureCols, isClassification, depth + 1, maxDepth, minSamplesSplit),
+    right: buildTree(rightData, targetCol, featureCols, isClassification, depth + 1, maxDepth, minSamplesSplit)
+  };
+};
+
+// Predict using a decision tree
+const predictTree = (tree: DecisionTreeNode, row: PatientRecord): string | number => {
+  if (tree.isLeaf) return tree.value!;
+  const featureVal = Number(row[tree.feature!]);
+  if (isNaN(featureVal)) return tree.value || 0;
+  return featureVal <= tree.threshold! ? predictTree(tree.left!, row) : predictTree(tree.right!, row);
+};
+
+// Count tree leaves
+const countLeaves = (tree: DecisionTreeNode): number => {
+  if (tree.isLeaf) return 1;
+  return countLeaves(tree.left!) + countLeaves(tree.right!);
+};
+
+// Get tree depth
+const getTreeDepth = (tree: DecisionTreeNode): number => {
+  if (tree.isLeaf) return 1;
+  return 1 + Math.max(getTreeDepth(tree.left!), getTreeDepth(tree.right!));
+};
+
+// Calculate feature importance from a tree
+const getFeatureImportance = (tree: DecisionTreeNode, totalSamples: number): Record<string, number> => {
+  const importance: Record<string, number> = {};
+
+  const traverse = (node: DecisionTreeNode, weight: number) => {
+    if (node.isLeaf || !node.feature) return;
+
+    const leftSamples = node.left?.samples || 0;
+    const rightSamples = node.right?.samples || 0;
+    const nodeImpurity = node.impurity || 0;
+    const leftImpurity = node.left?.impurity || 0;
+    const rightImpurity = node.right?.impurity || 0;
+
+    const impurityDecrease = weight * (
+      nodeImpurity -
+      (leftSamples / (node.samples || 1)) * leftImpurity -
+      (rightSamples / (node.samples || 1)) * rightImpurity
+    );
+
+    importance[node.feature] = (importance[node.feature] || 0) + impurityDecrease;
+
+    if (node.left) traverse(node.left, weight * (leftSamples / (node.samples || 1)));
+    if (node.right) traverse(node.right, weight * (rightSamples / (node.samples || 1)));
+  };
+
+  traverse(tree, 1);
+
+  // Normalize
+  const total = Object.values(importance).reduce((a, b) => a + b, 0);
+  if (total > 0) {
+    Object.keys(importance).forEach(k => { importance[k] /= total; });
+  }
+
+  return importance;
+};
+
+/**
+ * Train a Decision Tree model (CART algorithm)
+ */
+export const trainDecisionTree = (
+  data: PatientRecord[],
+  targetCol: string,
+  featureCols: string[],
+  options?: { maxDepth?: number; minSamplesSplit?: number; isClassification?: boolean }
+): DecisionTreeResult | null => {
+  try {
+    if (data.length < 5 || featureCols.length === 0) return null;
+
+    const maxDepth = options?.maxDepth ?? 5;
+    const minSamplesSplit = options?.minSamplesSplit ?? 5;
+
+    // Auto-detect classification vs regression
+    const sampleTarget = data[0][targetCol];
+    const isClassification = options?.isClassification ?? (typeof sampleTarget === 'string' ||
+      new Set(data.map(d => d[targetCol])).size < Math.min(10, data.length / 5));
+
+    const tree = buildTree(data, targetCol, featureCols, isClassification, 0, maxDepth, minSamplesSplit);
+
+    // Generate predictions
+    const predictions = data.map(row => ({
+      actual: row[targetCol] as string | number,
+      predicted: predictTree(tree, row)
+    }));
+
+    // Calculate accuracy
+    let accuracy: number;
+    if (isClassification) {
+      const correct = predictions.filter(p => String(p.actual) === String(p.predicted)).length;
+      accuracy = correct / predictions.length;
+    } else {
+      // R-squared for regression
+      const actuals = predictions.map(p => p.actual as number);
+      const predicted = predictions.map(p => p.predicted as number);
+      const mean = actuals.reduce((a, b) => a + b, 0) / actuals.length;
+      const ssTotal = actuals.reduce((sum, a) => sum + Math.pow(a - mean, 2), 0);
+      const ssRes = predictions.reduce((sum, p) => sum + Math.pow((p.actual as number) - (p.predicted as number), 2), 0);
+      accuracy = Math.max(0, 1 - (ssRes / ssTotal));
+    }
+
+    return {
+      tree,
+      accuracy,
+      featureImportance: getFeatureImportance(tree, data.length),
+      predictions,
+      isClassification,
+      maxDepth: getTreeDepth(tree),
+      numLeaves: countLeaves(tree)
+    };
+  } catch (error) {
+    console.error("Decision Tree training failed:", error);
+    return null;
+  }
+};
+
+/**
+ * Train a Random Forest model
+ */
+export const trainRandomForest = (
+  data: PatientRecord[],
+  targetCol: string,
+  featureCols: string[],
+  options?: { numTrees?: number; maxDepth?: number; maxFeatures?: number; isClassification?: boolean }
+): RandomForestResult | null => {
+  try {
+    if (data.length < 10 || featureCols.length === 0) return null;
+
+    const numTrees = options?.numTrees ?? 10;
+    const maxDepth = options?.maxDepth ?? 4;
+    const maxFeatures = options?.maxFeatures ?? Math.ceil(Math.sqrt(featureCols.length));
+
+    const sampleTarget = data[0][targetCol];
+    const isClassification = options?.isClassification ?? (typeof sampleTarget === 'string' ||
+      new Set(data.map(d => d[targetCol])).size < Math.min(10, data.length / 5));
+
+    const trees: DecisionTreeNode[] = [];
+    const oobPredictions: Map<number, (string | number)[]> = new Map();
+
+    for (let t = 0; t < numTrees; t++) {
+      // Bootstrap sampling
+      const bootstrapIndices = new Set<number>();
+      const bootstrapData: PatientRecord[] = [];
+      for (let i = 0; i < data.length; i++) {
+        const idx = Math.floor(Math.random() * data.length);
+        bootstrapIndices.add(idx);
+        bootstrapData.push(data[idx]);
+      }
+
+      // Random feature subset
+      const shuffledFeatures = [...featureCols].sort(() => Math.random() - 0.5);
+      const selectedFeatures = shuffledFeatures.slice(0, maxFeatures);
+
+      const tree = buildTree(bootstrapData, targetCol, selectedFeatures, isClassification, 0, maxDepth, 2);
+      trees.push(tree);
+
+      // OOB predictions
+      data.forEach((row, idx) => {
+        if (!bootstrapIndices.has(idx)) {
+          const pred = predictTree(tree, row);
+          const existing = oobPredictions.get(idx) || [];
+          existing.push(pred);
+          oobPredictions.set(idx, existing);
+        }
+      });
+    }
+
+    // Make predictions using all trees (voting/averaging)
+    const predictions = data.map(row => {
+      const treePreds = trees.map(tree => predictTree(tree, row));
+      let predicted: string | number;
+      if (isClassification) {
+        const counts: Record<string, number> = {};
+        treePreds.forEach(p => { counts[String(p)] = (counts[String(p)] || 0) + 1; });
+        predicted = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+      } else {
+        predicted = (treePreds as number[]).reduce((a, b) => a + b, 0) / treePreds.length;
+      }
+      return { actual: row[targetCol] as string | number, predicted };
+    });
+
+    // Calculate accuracy
+    let accuracy: number;
+    if (isClassification) {
+      const correct = predictions.filter(p => String(p.actual) === String(p.predicted)).length;
+      accuracy = correct / predictions.length;
+    } else {
+      const actuals = predictions.map(p => p.actual as number);
+      const mean = actuals.reduce((a, b) => a + b, 0) / actuals.length;
+      const ssTotal = actuals.reduce((sum, a) => sum + Math.pow(a - mean, 2), 0);
+      const ssRes = predictions.reduce((sum, p) => sum + Math.pow((p.actual as number) - (p.predicted as number), 2), 0);
+      accuracy = Math.max(0, 1 - (ssRes / ssTotal));
+    }
+
+    // Calculate OOB score
+    let oobScore = 0;
+    let oobCount = 0;
+    oobPredictions.forEach((preds, idx) => {
+      if (preds.length === 0) return;
+      let oobPred: string | number;
+      if (isClassification) {
+        const counts: Record<string, number> = {};
+        preds.forEach(p => { counts[String(p)] = (counts[String(p)] || 0) + 1; });
+        oobPred = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+        if (String(data[idx][targetCol]) === String(oobPred)) oobScore++;
+      } else {
+        oobPred = (preds as number[]).reduce((a, b) => a + b, 0) / preds.length;
+        // For regression, use 1 - normalized error
+      }
+      oobCount++;
+    });
+    oobScore = oobCount > 0 ? oobScore / oobCount : 0;
+
+    // Aggregate feature importance
+    const aggregatedImportance: Record<string, number> = {};
+    trees.forEach(tree => {
+      const treeImportance = getFeatureImportance(tree, data.length);
+      Object.entries(treeImportance).forEach(([feat, imp]) => {
+        aggregatedImportance[feat] = (aggregatedImportance[feat] || 0) + imp / numTrees;
+      });
+    });
+
+    return {
+      trees,
+      accuracy,
+      featureImportance: aggregatedImportance,
+      predictions,
+      numTrees,
+      oobScore,
+      isClassification
+    };
+  } catch (error) {
+    console.error("Random Forest training failed:", error);
+    return null;
+  }
+};
+
+/**
+ * Train a Gradient Boosting model
+ */
+export const trainGradientBoosting = (
+  data: PatientRecord[],
+  targetCol: string,
+  featureCols: string[],
+  options?: { numStages?: number; learningRate?: number; maxDepth?: number }
+): GradientBoostingResult | null => {
+  try {
+    if (data.length < 10 || featureCols.length === 0) return null;
+
+    const numStages = options?.numStages ?? 10;
+    const learningRate = options?.learningRate ?? 0.1;
+    const maxDepth = options?.maxDepth ?? 3;
+
+    // Get numeric targets
+    const targets = data.map(d => Number(d[targetCol]));
+    if (targets.some(isNaN)) {
+      console.warn("Gradient Boosting requires numeric target");
+      return null;
+    }
+
+    // Initialize with mean
+    const initialPrediction = targets.reduce((a, b) => a + b, 0) / targets.length;
+    let currentPredictions = new Array(data.length).fill(initialPrediction);
+
+    const stages: GradientBoostingStage[] = [];
+    const aggregatedImportance: Record<string, number> = {};
+
+    for (let stage = 0; stage < numStages; stage++) {
+      // Calculate residuals (negative gradient for squared loss)
+      const residuals = targets.map((t, i) => t - currentPredictions[i]);
+
+      // Create residual dataset
+      const residualData = data.map((row, i) => ({
+        ...row,
+        _residual: residuals[i]
+      }));
+
+      // Fit tree to residuals
+      const tree = buildTree(residualData, '_residual', featureCols, false, 0, maxDepth, 2);
+
+      // Update predictions
+      const treePredsRaw = data.map(row => predictTree(tree, row));
+      const treePreds = treePredsRaw.map(p => Number(p) || 0);
+      currentPredictions = currentPredictions.map((cp, i) => cp + learningRate * treePreds[i]);
+
+      stages.push({ tree, weight: learningRate });
+
+      // Accumulate feature importance
+      const treeImportance = getFeatureImportance(tree, data.length);
+      Object.entries(treeImportance).forEach(([feat, imp]) => {
+        aggregatedImportance[feat] = (aggregatedImportance[feat] || 0) + imp / numStages;
+      });
+    }
+
+    // Final predictions
+    const predictions = data.map((row, i) => ({
+      actual: targets[i],
+      predicted: currentPredictions[i]
+    }));
+
+    // Calculate R-squared
+    const mean = targets.reduce((a, b) => a + b, 0) / targets.length;
+    const ssTotal = targets.reduce((sum, t) => sum + Math.pow(t - mean, 2), 0);
+    const ssRes = predictions.reduce((sum, p) => sum + Math.pow((p.actual as number) - (p.predicted as number), 2), 0);
+    const accuracy = Math.max(0, 1 - (ssRes / ssTotal));
+
+    return {
+      stages,
+      accuracy,
+      featureImportance: aggregatedImportance,
+      predictions,
+      learningRate,
+      numStages
+    };
+  } catch (error) {
+    console.error("Gradient Boosting training failed:", error);
+    return null;
+  }
+};
+
+// Prediction functions for trained models
+export const predictWithRandomForest = (model: RandomForestResult, row: PatientRecord): string | number => {
+  const treePreds = model.trees.map(tree => predictTree(tree, row));
+  if (model.isClassification) {
+    const counts: Record<string, number> = {};
+    treePreds.forEach(p => { counts[String(p)] = (counts[String(p)] || 0) + 1; });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+  } else {
+    return (treePreds as number[]).reduce((a, b) => a + b, 0) / treePreds.length;
+  }
+};
+
+export const predictWithGradientBoosting = (model: GradientBoostingResult, row: PatientRecord, initialPred: number = 0): number => {
+  let prediction = initialPred;
+  model.stages.forEach(stage => {
+    const treePred = Number(predictTree(stage.tree, row)) || 0;
+    prediction += stage.weight * treePred;
+  });
+  return prediction;
+};
+

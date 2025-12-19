@@ -109,7 +109,8 @@ export enum AppStage {
   DATA_STUDIO = 'DATA_STUDIO', // The "Kitchen"
   SMART_ANALYSIS = 'SMART_ANALYSIS', // Formerly Simple Mode
   DEEP_DIVE = 'DEEP_DIVE', // Formerly Advanced Mode
-  REPORT = 'REPORT' // The Output
+  REPORT = 'REPORT', // The Output
+  LIVE_DASHBOARD = 'LIVE_DASHBOARD' // New Live Dashboard Mode
 }
 
 // Sub-stages for Smart Analysis linear flow
@@ -152,7 +153,7 @@ export interface MergeSuggestion {
   strategy: 'join' | 'union';
   suggestedKeyA?: string;
   suggestedKeyB?: string;
-  newColumnName?: string; 
+  newColumnName?: string;
   fileMappings?: { fileName: string, suggestedValue: string }[];
   confidence: 'High' | 'Medium' | 'Low';
 }
@@ -207,4 +208,76 @@ export interface ChatMessage {
   text: string;
   timestamp: Date;
   suggestions?: string[];
+}
+
+// --- ML MODEL TYPES ---
+
+export interface DecisionTreeNode {
+  feature?: string;
+  threshold?: number;
+  value?: number | string;
+  left?: DecisionTreeNode;
+  right?: DecisionTreeNode;
+  isLeaf: boolean;
+  samples?: number;
+  impurity?: number;
+}
+
+export interface DecisionTreeResult {
+  tree: DecisionTreeNode;
+  accuracy: number;
+  featureImportance: Record<string, number>;
+  predictions: { actual: number | string; predicted: number | string }[];
+  isClassification: boolean;
+  maxDepth: number;
+  numLeaves: number;
+}
+
+export interface RandomForestResult {
+  trees: DecisionTreeNode[];
+  accuracy: number;
+  featureImportance: Record<string, number>;
+  predictions: { actual: number | string; predicted: number | string }[];
+  numTrees: number;
+  oobScore: number;
+  isClassification: boolean;
+}
+
+export interface GradientBoostingStage {
+  tree: DecisionTreeNode;
+  weight: number;
+}
+
+export interface GradientBoostingResult {
+  stages: GradientBoostingStage[];
+  accuracy: number;
+  featureImportance: Record<string, number>;
+  predictions: { actual: number | string; predicted: number | string }[];
+  learningRate: number;
+  numStages: number;
+}
+
+// --- SAVED DASHBOARD TYPES ---
+
+export interface DashboardWidgetLayout {
+  chartIndex: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface SavedDashboard {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  datasetId?: string;
+  config: ChartConfig[];
+  filters?: Record<string, any>;
+  layout?: DashboardWidgetLayout[];
+  autoRefreshInterval?: number; // in seconds, 0 = disabled
+  isTemplate?: boolean;
+  requiredColumns?: string[]; // Schema needed for this template
+  description?: string; // AI generated description
 }
