@@ -58,7 +58,7 @@ const AIDiagnostics: React.FC<AIDiagnosticsProps> = ({ onClose }) => {
     // 3. Check API key (backend should have it)
     if (diagnostics.backend.status === 'ok' && diagnostics.auth.status === 'ok') {
       try {
-        const testResponse = await apiClient.analyzeWithGemini('Say "test"', undefined, { model: 'gemini-2.5-flash' });
+        const testResponse = await apiClient.analyzeWithGemini('Say "test"', undefined, { model: 'gemini-3' });
         if (testResponse && testResponse.result) {
           diagnostics.apiKey = { status: 'ok', message: 'API key is configured and working' };
           diagnostics.testCall = { status: 'ok', message: 'AI test call successful' };

@@ -11,7 +11,7 @@ const ai = geminiApiKey ? new GoogleGenAI({ apiKey: geminiApiKey }) : null;
 const analyzeRequestSchema = z.object({
   prompt: z.string().min(1, 'Prompt is required').max(10000, 'Prompt is too long'),
   context: z.record(z.any()).optional(),
-  model: z.string().default('gemini-2.5-flash'),
+  model: z.string().default('gemini-3'),
   responseMimeType: z.string().optional(),
   responseSchema: z.any().optional(),
 });

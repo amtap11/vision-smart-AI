@@ -315,7 +315,7 @@ Content-Type: application/json
     "dataColumns": ["age", "income", "city"],
     "rowCount": 1000
   },
-  "model": "gemini-2.5-flash",
+  "model": "gemini-3",
   "responseMimeType": "application/json",
   "responseSchema": {
     "type": "object",
@@ -337,7 +337,7 @@ Content-Type: application/json
 |-------|------|----------|-------------|
 | `prompt` | string | Yes | AI prompt (1-10,000 characters) |
 | `context` | object | No | Additional context data |
-| `model` | string | No | Gemini model (default: "gemini-2.5-flash") |
+| `model` | string | No | Gemini model (default: "gemini-3") |
 | `responseMimeType` | string | No | Expected response type (e.g., "application/json") |
 | `responseSchema` | object | No | JSON schema for structured output |
 
@@ -346,7 +346,7 @@ Content-Type: application/json
 {
   "success": true,
   "result": "{\"insights\": [\"Insight 1\", \"Insight 2\"]}",
-  "model": "gemini-2.5-flash"
+  "model": "gemini-3"
 }
 ```
 
@@ -471,7 +471,7 @@ curl -X POST http://localhost:3001/api/gemini/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "Suggest 3 analytical questions for a healthcare dataset with columns: patient_id, age, diagnosis, admission_date, discharge_date",
-    "model": "gemini-2.5-flash",
+    "model": "gemini-3",
     "responseMimeType": "application/json",
     "responseSchema": {
       "type": "object",
@@ -495,7 +495,7 @@ curl -X POST http://localhost:3001/api/gemini/analyze \
 {
   "success": true,
   "result": "{\"questions\": [{\"question\": \"What is the average length of stay by diagnosis?\", \"feasibility\": \"High\", \"reasoning\": \"We have admission and discharge dates to calculate stay duration\"}]}",
-  "model": "gemini-2.5-flash"
+  "model": "gemini-3"
 }
 ```
 

@@ -3,8 +3,8 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { AnalyticalQuestion, ColumnProfile, RoadmapStep, Recommendation, GoalAnalysisResult, ChartConfig, ReportItem, ReportReview, Dataset, TransformationSuggestion, MergeSuggestion, StatisticalSuggestion } from "../types";
 import { apiClient } from "./apiClient";
 
-// We use 2.5 flash for speed and efficiency in this interactive dashboard
-const MODEL_NAME = "gemini-2.5-flash";
+// We use Gemini 3 for this interactive dashboard
+const MODEL_NAME = "gemini-3";
 
 // Helper to check if we should use backend API (user is authenticated)
 function shouldUseBackendAPI(): boolean {
