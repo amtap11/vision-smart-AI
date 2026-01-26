@@ -82,8 +82,6 @@ For complete authentication and backend API features:
 
 5. **Access the app**: http://localhost:3000
 
-See [SETUP.md](SETUP.md) for detailed setup instructions.
-
 ## 🐳 Docker Deployment
 
 Run the full application stack (frontend, backend, and database) with Docker:
@@ -145,8 +143,6 @@ export DOCKER_NAMESPACE=your-username
 # Push to specific registry (e.g., GitHub Container Registry)
 ./scripts/push.sh --registry ghcr.io --namespace your-org v1.0.0
 ```
-
-For detailed Docker documentation, see [DOCKER.md](DOCKER.md).
 
 ## 🎯 Feature Overview
 
@@ -252,22 +248,4 @@ For detailed Docker documentation, see [DOCKER.md](DOCKER.md).
 
 ## 📚 Documentation
 
-### Getting Started
-- [Setup Guide](SETUP.md) - Complete development environment setup
-- [Docker Deployment Guide](DOCKER.md) - Containerized deployment with Docker Compose
-- [Gemini API Setup](GEMINI_SETUP.md) - Configure Google Gemini AI integration
-
-### Architecture & Development
-- [Application Overview](docs/APPLICATION_OVERVIEW.md) - Architecture, tech stack, and system design
-- [Developer Guide](docs/DEVELOPER_GUIDE.md) - Development workflows, coding standards, and best practices
-- [API Documentation](docs/API_DOCUMENTATION.md) - Complete REST API reference
-
-### Features & Security
-- [Features Guide](docs/FEATURES.md) - Detailed feature documentation and usage
-- [Security Policy](SECURITY.md) - Security measures and vulnerability reporting
-- [Security Checklist](docs/SECURITY_CHECKLIST.md) - Security audit checklist
-- [Incident Response Plan](docs/INCIDENT_RESPONSE_PLAN.md) - Security incident procedures
-
-### Additional Resources
-- [Scripts Documentation](scripts/README.md) - Docker utility scripts reference
-- [Backend Documentation](backend/README.md) - Backend service documentation
+- [Backend Documentation](backend/README.md) - Backend API service, endpoints, and setup
