@@ -65,28 +65,84 @@ check_docker() {
     fi
 }
 
-# Check if environment file exists
+# Check if Gemini API is configured
+check_gemini_configured() {
+    if [ -f "$ENV_FILE" ]; then
+        if grep -q "^GEMINI_API_KEY=" "$ENV_FILE" 2>/dev/null; then
+            API_KEY=$(grep "^GEMINI_API_KEY=" "$ENV_FILE" | cut -d'=' -f2)
+            if [ -n "$API_KEY" ] && [ "$API_KEY" != "your_gemini_api_key_here" ]; then
+                return 0
+            fi
+        fi
+    fi
+    return 1
+}
+
+# Check if environment file exists and Gemini API is configured
 check_env_file() {
     if [ ! -f "$ENV_FILE" ]; then
         print_warning "Environment file not found: $ENV_FILE"
         echo ""
-        echo "Creating from template..."
 
-        if [ -f ".env.docker.example" ]; then
-            cp .env.docker.example "$ENV_FILE"
-            print_success "Created $ENV_FILE from template"
+        # Check if setup script exists and offer to run it
+        if [ -f "./scripts/setup.sh" ]; then
+            print_info "First-time setup required!"
             echo ""
-            print_warning "Please edit $ENV_FILE and add your configuration:"
-            echo "  - GEMINI_API_KEY"
-            echo "  - JWT_SECRET (use a strong random string)"
-            echo "  - VITE_API_URL (for production)"
+            echo "Vision Smart AI requires Gemini 3 API configuration before starting."
             echo ""
-            read -p "Press Enter after editing $ENV_FILE to continue..."
+            echo -n "Run setup wizard now? [Y/n]: "
+            read -r run_setup
+            if [ "$run_setup" != "n" ] && [ "$run_setup" != "N" ]; then
+                chmod +x ./scripts/setup.sh
+                exec ./scripts/setup.sh
+            else
+                print_error "Setup required. Run: ./scripts/setup.sh"
+                exit 1
+            fi
         else
-            print_error "Template file .env.docker.example not found"
-            exit 1
+            # Fallback: create from template
+            if [ -f ".env.docker.example" ]; then
+                cp .env.docker.example "$ENV_FILE"
+                print_success "Created $ENV_FILE from template"
+                echo ""
+                print_warning "Please edit $ENV_FILE and add your configuration:"
+                echo "  - GEMINI_API_KEY (REQUIRED - get from https://aistudio.google.com/apikey)"
+                echo "  - JWT_SECRET (use a strong random string)"
+                echo "  - VITE_API_URL (for production)"
+                echo ""
+                read -p "Press Enter after editing $ENV_FILE to continue..."
+            else
+                print_error "Template file .env.docker.example not found"
+                exit 1
+            fi
         fi
     fi
+
+    # Verify Gemini API is configured
+    if ! check_gemini_configured; then
+        print_error "Gemini 3 API key is not configured!"
+        echo ""
+        echo "The Gemini API key is required for AI-powered analytics."
+        echo ""
+
+        if [ -f "./scripts/setup.sh" ]; then
+            echo -n "Run setup wizard to configure? [Y/n]: "
+            read -r run_setup
+            if [ "$run_setup" != "n" ] && [ "$run_setup" != "N" ]; then
+                chmod +x ./scripts/setup.sh
+                exec ./scripts/setup.sh
+            fi
+        fi
+
+        echo ""
+        echo "To configure manually:"
+        echo "  1. Get your API key from: https://aistudio.google.com/apikey"
+        echo "  2. Edit $ENV_FILE and set GEMINI_API_KEY=your_key_here"
+        echo ""
+        exit 1
+    fi
+
+    print_success "Gemini 3 API configured"
 }
 
 # Start services
