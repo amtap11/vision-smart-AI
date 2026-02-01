@@ -43,7 +43,18 @@ jobs:
         run: cd backend && npm audit --audit-level=moderate
         continue-on-error: true
 
+      - name: Check Snyk Token Availability
+        id: snyk-check
+        run: |
+          if [ -z "${{ secrets.SNYK_TOKEN }}" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "::notice::Snyk scan skipped - SNYK_TOKEN not configured"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Snyk Security Scan
+        if: steps.snyk-check.outputs.skip != 'true'
         uses: snyk/actions/node@master
         continue-on-error: true
         env:
@@ -60,7 +71,18 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check GitGuardian Token Availability
+        id: gg-check
+        run: |
+          if [ -z "${{ secrets.GITGUARDIAN_API_KEY }}" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "::notice::GitGuardian scan skipped - GITGUARDIAN_API_KEY not configured"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: GitGuardian scan
+        if: steps.gg-check.outputs.skip != 'true'
         uses: GitGuardian/ggshield-action@v1.31.1
         continue-on-error: true
         env:
@@ -88,7 +110,18 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check SonarCloud Token Availability
+        id: sonar-check
+        run: |
+          if [ -z "${{ secrets.SONAR_TOKEN }}" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "::notice::SonarCloud scan skipped - SONAR_TOKEN not configured"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: SonarCloud Scan
+        if: steps.sonar-check.outputs.skip != 'true'
         uses: SonarSource/sonarcloud-github-action@v4
         continue-on-error: true
         env:
