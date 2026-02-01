@@ -71,7 +71,7 @@ jobs:
           GITHUB_PULL_BASE_SHA: ${{ github.event.pull_request.base.sha }}
 
       - name: TruffleHog Secret Scan
-        uses: trufflesecurity/trufflehog@main
+        uses: trufflesecurity/trufflehog@v3.88.0
         continue-on-error: true
         with:
           path: ./
@@ -88,7 +88,7 @@ jobs:
           fetch-depth: 0
 
       - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@master
+        uses: SonarSource/sonarcloud-github-action@v4
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -120,7 +120,7 @@ jobs:
         run: docker build -t vision-smart-ai-backend:${{ github.sha }} ./backend
 
       - name: Run Trivy vulnerability scanner (Frontend)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: vision-smart-ai-frontend:${{ github.sha }}
           format: 'sarif'
@@ -128,7 +128,7 @@ jobs:
           severity: 'CRITICAL,HIGH'
 
       - name: Run Trivy vulnerability scanner (Backend)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: vision-smart-ai-backend:${{ github.sha }}
           format: 'sarif'
