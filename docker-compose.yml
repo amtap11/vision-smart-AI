@@ -51,8 +51,7 @@ services:
       timeout: 3s
       start_period: 40s
       retries: 3
-    # Run database migration on startup
-    command: sh -c "npm run db:migrate && node dist/server.js"
+    # Entrypoint script handles: Gemini API validation, migrations, and server start
 
   # Frontend Web Service
   frontend:

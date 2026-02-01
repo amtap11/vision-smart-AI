@@ -23,8 +23,8 @@ RUN npm run build
 # ============================================
 FROM node:20-alpine AS production
 
-# Install dumb-init to handle signals properly
-RUN apk add --no-cache dumb-init
+# Install dumb-init to handle signals properly and netcat for health checks
+RUN apk add --no-cache dumb-init netcat-openbsd
 
 # Create app directory
 WORKDIR /app
@@ -38,6 +38,10 @@ RUN npm ci --only=production && \
 
 # Copy built application from builder stage
 COPY --from=builder /app/dist ./dist
+
+# Copy entrypoint script
+COPY entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs && \
@@ -57,5 +61,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
 # Use dumb-init to handle signals properly
 ENTRYPOINT ["dumb-init", "--"]
 
-# Start the application
-CMD ["node", "dist/server.js"]
+# Run entrypoint script which validates Gemini API and starts the server
+CMD ["./entrypoint.sh"]
