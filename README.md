@@ -237,7 +237,7 @@ export DOCKER_NAMESPACE=your-username
 - Helmet, CORS, rate limiting (security)
 
 **AI Integration**
-- Google Gemini 2.5 Flash
+- Google Gemini 3 pro
 - Structured JSON output
 - Context-aware analysis
 
