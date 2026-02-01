@@ -1,0 +1,114 @@
+# ============================================
+# Vision Smart AI - Full Stack Dockerfile
+# Frontend + Backend in a single image
+# ============================================
+
+# ============================================
+# Stage 1: Build Frontend
+# ============================================
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /app/frontend
+
+# Copy frontend package files
+COPY package*.json ./
+
+# Install frontend dependencies
+RUN npm ci
+
+# Copy frontend source code
+COPY index.html tsconfig.json vite.config.ts ./
+COPY components/ ./components/
+COPY services/ ./services/
+COPY index.tsx App.tsx types.ts vite-env.d.ts ./
+
+# Build argument for API URL (internal to container)
+ARG VITE_API_URL=/api
+ENV VITE_API_URL=${VITE_API_URL}
+
+# Build frontend
+RUN npm run build
+
+# ============================================
+# Stage 2: Build Backend
+# ============================================
+FROM node:20-alpine AS backend-builder
+
+WORKDIR /app/backend
+
+# Copy backend package files
+COPY backend/package*.json ./
+
+# Install all dependencies (including devDependencies for building)
+RUN npm ci
+
+# Copy backend source code
+COPY backend/src/ ./src/
+COPY backend/tsconfig.json ./
+
+# Build TypeScript to JavaScript
+RUN npm run build
+
+# ============================================
+# Stage 3: Production - Full Stack Image
+# ============================================
+FROM node:20-alpine AS production
+
+# Install nginx, dumb-init, netcat, and supervisor
+RUN apk add --no-cache \
+    nginx \
+    dumb-init \
+    netcat-openbsd \
+    supervisor \
+    curl
+
+# Create app directory
+WORKDIR /app
+
+# Copy backend package files and install production dependencies
+COPY backend/package*.json ./
+RUN npm ci --only=production && npm cache clean --force
+
+# Copy built backend from builder
+COPY --from=backend-builder /app/backend/dist ./dist
+
+# Copy entrypoint script
+COPY fullstack-entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
+
+# Copy nginx configuration
+COPY nginx.fullstack.conf /etc/nginx/nginx.conf
+
+# Copy built frontend to nginx html directory
+COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
+
+# Create supervisor config directory
+RUN mkdir -p /etc/supervisor.d
+
+# Copy supervisor configuration
+COPY supervisord.conf /etc/supervisord.conf
+
+# Create necessary directories and set permissions
+RUN mkdir -p /var/cache/nginx/client_temp \
+    && mkdir -p /var/cache/nginx/proxy_temp \
+    && mkdir -p /var/cache/nginx/fastcgi_temp \
+    && mkdir -p /var/cache/nginx/uwsgi_temp \
+    && mkdir -p /var/cache/nginx/scgi_temp \
+    && mkdir -p /var/log/supervisor \
+    && mkdir -p /run/nginx \
+    && chown -R nginx:nginx /var/cache/nginx \
+    && chown -R nginx:nginx /usr/share/nginx/html \
+    && chmod -R 755 /usr/share/nginx/html
+
+# Expose ports (80 for nginx, 3001 for backend internally)
+EXPOSE 80
+
+# Health check - check both nginx and backend
+HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
+    CMD curl -f http://localhost/health && curl -f http://localhost:3001/health || exit 1
+
+# Use dumb-init to handle signals properly
+ENTRYPOINT ["dumb-init", "--"]
+
+# Run entrypoint script
+CMD ["./entrypoint.sh"]
