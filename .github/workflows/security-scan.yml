@@ -132,7 +132,7 @@ jobs:
 
       - name: Run Trivy vulnerability scanner (Frontend)
         if: steps.build-frontend.outcome == 'success'
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.33.1
         continue-on-error: true
         with:
           image-ref: vision-smart-ai-frontend:${{ github.sha }}
@@ -142,7 +142,7 @@ jobs:
 
       - name: Run Trivy vulnerability scanner (Backend)
         if: steps.build-backend.outcome == 'success'
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.33.1
         continue-on-error: true
         with:
           image-ref: vision-smart-ai-backend:${{ github.sha }}
