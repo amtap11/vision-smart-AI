@@ -96,7 +96,7 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
       - name: CodeQL Analysis
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         continue-on-error: true
         id: codeql-init
         with:
@@ -104,12 +104,12 @@ jobs:
           queries: security-and-quality
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@v4
         continue-on-error: true
         if: steps.codeql-init.outcome == 'success'
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         continue-on-error: true
         if: steps.codeql-init.outcome == 'success'
 
@@ -152,7 +152,7 @@ jobs:
 
       - name: Upload Trivy results to GitHub Security
         if: steps.build-frontend.outcome == 'success'
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         continue-on-error: true
         with:
           sarif_file: 'trivy-frontend-results.sarif'
@@ -160,7 +160,7 @@ jobs:
 
       - name: Upload Trivy Backend results to GitHub Security
         if: steps.build-backend.outcome == 'success'
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         continue-on-error: true
         with:
           sarif_file: 'trivy-backend-results.sarif'
